@@ -1,0 +1,30 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.alive.player">
+
+    <application
+        android:allowBackup="false"
+        android:label="ALIVE Player"
+        android:supportsRtl="true">
+
+        <activity
+            android:name="com.alive.player.ui.PairingActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name="com.alive.player.ui.PlaybackActivity"
+            android:exported="false" />
+
+        <activity
+            android:name="com.alive.player.settings.SettingsActivity"
+            android:exported="false" />
+
+        <service
+            android:name="com.alive.player.service.PlaybackForegroundService"
+            android:exported="false" />
+    </application>
+</manifest>

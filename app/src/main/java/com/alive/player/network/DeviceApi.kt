@@ -28,8 +28,13 @@ data class PopEventPayload(
     val timestampIso: String,
 )
 
+data class HeartbeatRequest(
+    val timestampIso: String,
+)
+
 interface DeviceApi {
     suspend fun claimDevice(request: ClaimRequest): ClaimResponse
     suspend fun fetchPlan(hours: Int, etag: String?): PlanResponse
     suspend fun uploadEvents(batch: PopBatchRequest)
+    suspend fun sendHeartbeat(request: HeartbeatRequest)
 }
