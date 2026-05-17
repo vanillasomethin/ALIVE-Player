@@ -1,13 +1,303 @@
 package com.alive.player.playback
 
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.webkit.WebView
+import android.widget.ImageView
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
+import com.alive.player.data.AppDatabase
+import com.alive.player.data.ProofEvent
+import com.alive.player.download.AssetDownloader
 import com.alive.player.schedule.PlanItem
+import com.alive.player.worker.PopUploadWorker
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import com.bumptech.glide.Glide
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 
-class PlaybackEngine {
-    fun playItem(item: PlanItem) {
-        // TODO: switch renderer and emit proof-of-play events.
+class PlaybackEngine(private val context: Context) {
+
+    private val sessionId = UUID.randomUUID().toString()
+    private var currentItem: PlanItem? = null
+    private var playStartMs: Long = 0L
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var advanceRunnable: Runnable? = null
+
+    private var exoPlayer: ExoPlayer? = null
+    private var playerView: PlayerView? = null
+    private var imageView: ImageView? = null
+    private var webView: WebView? = null
+
+    private var pendingItem: PlanItem? = null
+
+    private var currentWindowIndex: Int = 0
+    private var currentItemIndex: Int = 0
+
+    fun attachViews(playerView: PlayerView, imageView: ImageView, webView: WebView) {
+        this.playerView = playerView
+        this.imageView = imageView
+        this.webView = webView
+
+        if (exoPlayer == null) {
+            exoPlayer = ExoPlayer.Builder(context).build()
+        }
+        playerView.player = exoPlayer
+
+        pendingItem?.let {
+            pendingItem = null
+            renderItem(it)
+        }
+    }
+
+    fun detachViews() {
+        playerView?.player = null
+        playerView = null
+        imageView = null
+        webView = null
+    }
+
+    fun startLoop() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val plan = PlanLoader.load(context)
+            mainHandler.post {
+                if (plan == null || (plan.windows.isEmpty() && plan.fallbackItems.isEmpty())) return@post
+                currentWindowIndex = 0
+                currentItemIndex = 0
+                advance(plan)
+            }
+        }
+    }
+
+    private fun advance(plan: com.alive.player.schedule.Plan) {
+        val now = System.currentTimeMillis()
+        val activeWindow = plan.windows.firstOrNull { it.startEpochMs <= now && now < it.endEpochMs }
+
+        val itemList = if (activeWindow != null && activeWindow.items.isNotEmpty()) {
+            activeWindow.items
+        } else {
+            plan.fallbackItems
+        }
+
+        if (itemList.isEmpty()) return
+
+        val item = itemList[currentItemIndex % itemList.size]
+        currentItemIndex = (currentItemIndex + 1) % itemList.size
+
+        renderItem(item)
+    }
+
+    private fun renderItem(item: PlanItem) {
+        val pv = playerView
+        val iv = imageView
+        val wv = webView
+
+        playItem(item)
+
+        if (pv == null || iv == null || wv == null) {
+            pendingItem = item
+            scheduleAdvanceTimer(item)
+            return
+        }
+
+        val localFile = item.sha256?.let { sha256 ->
+            item.ext?.let { ext ->
+                AssetDownloader.getCachedFile(context, item.contentVersionId, "current", sha256, ext)
+            }
+        }
+        val resolvedUri = if (localFile != null) android.net.Uri.fromFile(localFile) else android.net.Uri.parse(item.uri)
+
+        when (item.type) {
+            "video" -> {
+                pv.visibility = android.view.View.VISIBLE
+                iv.visibility = android.view.View.GONE
+                wv.visibility = android.view.View.GONE
+
+                val player = exoPlayer ?: return
+                cancelAdvanceTimer()
+                player.clearMediaItems()
+                player.removeListener(videoEndListener)
+                player.addListener(videoEndListener)
+                player.setMediaItem(MediaItem.fromUri(resolvedUri))
+                player.prepare()
+                player.playWhenReady = true
+                scheduleAdvanceTimer(item)
+            }
+            "image" -> {
+                pv.visibility = android.view.View.GONE
+                iv.visibility = android.view.View.VISIBLE
+                wv.visibility = android.view.View.GONE
+
+                Glide.with(context).load(resolvedUri).centerCrop().into(iv)
+                scheduleAdvanceTimer(item)
+            }
+            "web" -> {
+                pv.visibility = android.view.View.GONE
+                iv.visibility = android.view.View.GONE
+                wv.visibility = android.view.View.VISIBLE
+
+                wv.settings.javaScriptEnabled = false
+                wv.loadUrl(item.uri)
+                scheduleAdvanceTimer(item)
+            }
+        }
+    }
+
+    private val videoEndListener = object : Player.Listener {
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_ENDED) {
+                cancelAdvanceTimer()
+                reloadAndAdvance()
+            }
+        }
+    }
+
+    private fun reloadAndAdvance() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val plan = PlanLoader.load(context)
+            mainHandler.post {
+                if (plan != null) advance(plan)
+            }
+        }
+    }
+
+    private fun scheduleAdvanceTimer(item: PlanItem) {
+        cancelAdvanceTimer()
+        val runnable = Runnable { reloadAndAdvance() }
+        advanceRunnable = runnable
+        mainHandler.postDelayed(runnable, item.durationMs)
+    }
+
+    private fun cancelAdvanceTimer() {
+        advanceRunnable?.let { mainHandler.removeCallbacks(it) }
+        advanceRunnable = null
+    }
+
+    private fun playItem(item: PlanItem) {
+        val now = System.currentTimeMillis()
+        currentItem?.let { emitPlayEnd(it, now) }
+        currentItem = item
+        playStartMs = now
+        emitEvent(
+            ProofEvent(
+                eventId = UUID.randomUUID().toString(),
+                contentVersionId = item.contentVersionId,
+                type = "PLAY_START",
+                timestampUtcEpochMs = now,
+                durationMs = null,
+                sessionId = sessionId,
+            )
+        )
+    }
+
+    fun getCurrentPositionMs(): Long? =
+        if (exoPlayer?.isPlaying == true) exoPlayer?.currentPosition else null
+
+    fun restartCurrentItem() {
+        val item = currentItem ?: return
+        val pv = playerView ?: return
+        val iv = imageView ?: return
+        val wv = webView ?: return
+
+        val localFile = item.sha256?.let { sha256 ->
+            item.ext?.let { ext ->
+                AssetDownloader.getCachedFile(context, item.contentVersionId, "current", sha256, ext)
+            }
+        }
+        val resolvedUri = if (localFile != null) android.net.Uri.fromFile(localFile) else android.net.Uri.parse(item.uri)
+
+        when (item.type) {
+            "video" -> {
+                pv.visibility = android.view.View.VISIBLE
+                iv.visibility = android.view.View.GONE
+                wv.visibility = android.view.View.GONE
+
+                val player = exoPlayer ?: return
+                cancelAdvanceTimer()
+                player.clearMediaItems()
+                player.removeListener(videoEndListener)
+                player.addListener(videoEndListener)
+                player.setMediaItem(MediaItem.fromUri(resolvedUri))
+                player.prepare()
+                player.playWhenReady = true
+                scheduleAdvanceTimer(item)
+            }
+            "image" -> {
+                pv.visibility = android.view.View.GONE
+                iv.visibility = android.view.View.VISIBLE
+                wv.visibility = android.view.View.GONE
+
+                Glide.with(context).load(resolvedUri).centerCrop().into(iv)
+                scheduleAdvanceTimer(item)
+            }
+            "web" -> {
+                pv.visibility = android.view.View.GONE
+                iv.visibility = android.view.View.GONE
+                wv.visibility = android.view.View.VISIBLE
+
+                wv.settings.javaScriptEnabled = false
+                wv.loadUrl(item.uri)
+                scheduleAdvanceTimer(item)
+            }
+        }
     }
 
     fun stop() {
-        // TODO: stop playback and release resources.
+        cancelAdvanceTimer()
+        val now = System.currentTimeMillis()
+        currentItem?.let { emitPlayEnd(it, now) }
+        currentItem = null
+        mainHandler.post {
+            exoPlayer?.release()
+            exoPlayer = null
+        }
+    }
+
+    private fun emitPlayEnd(item: PlanItem, nowMs: Long) {
+        emitEvent(
+            ProofEvent(
+                eventId = UUID.randomUUID().toString(),
+                contentVersionId = item.contentVersionId,
+                type = "PLAY_END",
+                timestampUtcEpochMs = nowMs,
+                durationMs = (nowMs - playStartMs).coerceAtLeast(0),
+                sessionId = sessionId,
+            )
+        )
+    }
+
+    private fun emitEvent(event: ProofEvent) {
+        CoroutineScope(Dispatchers.IO).launch {
+            AppDatabase.get(context).proofEventDao().insert(event)
+            scheduleUpload()
+        }
+    }
+
+    private fun scheduleUpload() {
+        val request = OneTimeWorkRequestBuilder<PopUploadWorker>()
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "pop_upload",
+            ExistingWorkPolicy.KEEP,
+            request,
+        )
     }
 }

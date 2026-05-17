@@ -1,0 +1,12 @@
+ALIVE Player turns any Android display into a managed digital signage screen.
+
+Once paired with your ALIVE console, the player:
+• Downloads and caches your scheduled content automatically
+• Plays video, images, and web content on a dayparted schedule
+• Reports proof-of-play events back to the console in real time
+• Recovers from network outages using the last known plan
+• Runs silently in the background with no on-screen chrome
+
+Designed for commercial deployments — kiosks, retail displays, hospitality screens, and more.
+
+Requires an active ALIVE console account.

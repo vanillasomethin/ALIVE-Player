@@ -5,6 +5,18 @@ build/
 
 # Local configuration
 local.properties
+keystore.properties
+*.jks
+*.keystore
+
+# Play Store service account key
+play-service-account.json
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
 
 # IDEs
 .idea/

@@ -6,6 +6,8 @@ import android.os.Bundle
 class SettingsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // TODO: host SettingsFragment and expose pairing status/reset actions.
+        fragmentManager.beginTransaction()
+            .replace(android.R.id.content, SettingsFragment())
+            .commit()
     }
 }

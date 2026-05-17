@@ -13,6 +13,7 @@ import com.alive.player.R
 import com.alive.player.network.DeviceApiProvider
 import com.alive.player.settings.DevicePrefs
 import com.alive.player.worker.HeartbeatScheduler
+import com.alive.player.worker.PlanFetchScheduler
 import java.util.concurrent.Executors
 
 class PairingActivity : Activity() {
@@ -159,6 +160,7 @@ class PairingActivity : Activity() {
                         if (!token.isNullOrBlank() && !deviceId.isNullOrBlank()) {
                             prefs.storePairing(token, deviceId)
                             HeartbeatScheduler.schedule(applicationContext)
+                            PlanFetchScheduler.schedule(applicationContext)
                             runOnUiThread { startPlayback() }
                         } else {
                             runOnUiThread {

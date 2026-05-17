@@ -1,0 +1,95 @@
+import java.util.Properties
+
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("com.google.devtools.ksp")
+    id("com.github.triplet.play")
+}
+
+// Load keystore.properties if present (local dev); CI injects env vars directly.
+val keystoreProps = Properties().also { props ->
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) props.load(file.inputStream())
+}
+
+android {
+    namespace = "com.alive.player"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "com.alive.player"
+        minSdk = 21
+        targetSdk = 34
+        versionCode = (System.getenv("BUILD_NUMBER") ?: "1").toInt()
+        versionName = "1.0.${versionCode}"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file(
+                System.getenv("SIGNING_STORE_FILE")
+                    ?: keystoreProps["storeFile"] as String? ?: "release.jks"
+            )
+            storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+                ?: keystoreProps["storePassword"] as String? ?: ""
+            keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+                ?: keystoreProps["keyAlias"] as String? ?: ""
+            keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
+                ?: keystoreProps["keyPassword"] as String? ?: ""
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
+    }
+
+    bundle {
+        language { enableSplit = true }
+        density { enableSplit = true }
+        abi { enableSplit = true }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
+play {
+    serviceAccountCredentials.set(
+        file(System.getenv("PLAY_SERVICE_ACCOUNT_JSON") ?: "play-service-account.json")
+    )
+    track.set("internal")          // promote to alpha/beta/production manually in Console
+    defaultToAppBundles.set(true)
+    releaseStatus.set(com.github.triplet.gradle.androidpublisher.ReleaseStatus.COMPLETED)
+}
+
+dependencies {
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
+
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+
+    val media3Version = "1.3.1"
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
+    implementation("androidx.media3:media3-ui:$media3Version")
+    implementation("com.github.bumptech.glide:glide:4.16.0")
+}
