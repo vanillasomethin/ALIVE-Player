@@ -19,7 +19,7 @@ android {
 
     defaultConfig {
         applicationId = "com.alive.player"
-        minSdk = 21
+        minSdk = 26
         targetSdk = 34
         versionCode = (System.getenv("BUILD_NUMBER") ?: "1").toInt()
         versionName = "1.0.${versionCode}"
