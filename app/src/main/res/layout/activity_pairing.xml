@@ -1,57 +1,228 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  PairingActivity — TV landscape, full-screen, ink black background.
+  Split layout: left brand column + right code card.
+-->
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="32dp">
+    android:background="@color/alive_ink"
+    android:padding="48dp">
 
-    <TextView
-        android:id="@+id/pairing_title"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Pair this device"
-        android:textSize="28sp" />
-
-    <TextView
-        android:id="@+id/pairing_subtitle"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:text="Enter this code in the console to pair the device." />
-
-    <TextView
-        android:id="@+id/claim_code_value"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:text="----"
-        android:textSize="32sp" />
-
-    <TextView
-        android:id="@+id/claim_code_countdown"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="Expires in --:--" />
-
-    <Button
-        android:id="@+id/claim_refresh_button"
+    <!-- ── Top-left: alive● wordmark ─────────────────────── -->
+    <LinearLayout
+        android:id="@+id/logo_row"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="Refresh code" />
+        android:layout_alignParentStart="true"
+        android:layout_alignParentTop="true"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
 
-    <ProgressBar
-        android:id="@+id/claim_progress"
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="alive"
+            android:textColor="@color/alive_white"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:letterSpacing="-0.03"
+            android:fontFamily="sans-serif-medium" />
+
+        <!-- Red dot — the ● in alive● -->
+        <View
+            android:layout_width="9dp"
+            android:layout_height="9dp"
+            android:layout_marginStart="3dp"
+            android:layout_marginBottom="2dp"
+            android:background="@drawable/shape_dot_red"
+            android:layout_gravity="center_vertical" />
+
+    </LinearLayout>
+
+    <!-- ── Top-right: version tag ─────────────────────────── -->
+    <TextView
+        android:id="@+id/version_tag"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:visibility="gone" />
+        android:layout_alignParentTop="true"
+        android:layout_alignParentEnd="true"
+        android:text="TV Player"
+        android:textColor="@color/alive_muted"
+        android:textSize="11sp"
+        android:fontFamily="monospace"
+        android:letterSpacing="0.12" />
 
-    <TextView
-        android:id="@+id/pairing_status"
+    <!-- ── Main content row ───────────────────────────────── -->
+    <LinearLayout
+        android:id="@+id/content_row"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:text="" />
-</LinearLayout>
+        android:layout_centerInParent="true"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <!-- Left column: brand copy + instructions (55%) -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="55"
+            android:orientation="vertical"
+            android:paddingEnd="48dp">
+
+            <!-- Eyebrow label -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="DEVICE SETUP"
+                android:textColor="@color/alive_red"
+                android:textSize="10sp"
+                android:fontFamily="monospace"
+                android:letterSpacing="0.22"
+                android:layout_marginBottom="20dp" />
+
+            <!-- Hero headline: "Seen." in red (set via SpannableString in code) -->
+            <TextView
+                android:id="@+id/pairing_headline"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Seen.\nRemembered.\nBought."
+                android:textColor="@color/alive_white"
+                android:textSize="44sp"
+                android:textStyle="bold"
+                android:fontFamily="sans-serif-medium"
+                android:letterSpacing="-0.03"
+                android:lineSpacingMultiplier="1.1"
+                android:layout_marginBottom="28dp" />
+
+            <!-- Description -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Enter the code shown on the right into your Alive dashboard to activate this screen."
+                android:textColor="@color/alive_muted"
+                android:textSize="15sp"
+                android:lineSpacingMultiplier="1.5"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Your device will begin playing scheduled content automatically once paired."
+                android:textColor="#4affffff"
+                android:textSize="13sp"
+                android:lineSpacingMultiplier="1.5" />
+
+        </LinearLayout>
+
+        <!-- Right column: claim code card (45%) -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="45"
+            android:orientation="vertical"
+            android:background="@drawable/bg_code_card"
+            android:padding="36dp"
+            android:gravity="center_horizontal">
+
+            <!-- Card label -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ACTIVATION CODE"
+                android:textColor="@color/alive_muted"
+                android:textSize="10sp"
+                android:fontFamily="monospace"
+                android:letterSpacing="0.22"
+                android:layout_marginBottom="20dp" />
+
+            <!-- The code itself -->
+            <TextView
+                android:id="@+id/claim_code_value"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="——————"
+                android:textColor="@color/alive_white"
+                android:textSize="52sp"
+                android:textStyle="bold"
+                android:fontFamily="monospace"
+                android:letterSpacing="0.18"
+                android:layout_marginBottom="20dp" />
+
+            <!-- Separator line -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/code_card_border"
+                android:layout_marginBottom="20dp" />
+
+            <!-- Countdown -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="24dp">
+
+                <View
+                    android:id="@+id/status_dot"
+                    android:layout_width="7dp"
+                    android:layout_height="7dp"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/shape_dot_red" />
+
+                <TextView
+                    android:id="@+id/claim_code_countdown"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Expires in --:--"
+                    android:textColor="@color/alive_muted"
+                    android:textSize="13sp"
+                    android:fontFamily="monospace" />
+
+            </LinearLayout>
+
+            <!-- Refresh button -->
+            <Button
+                android:id="@+id/claim_refresh_button"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="Refresh Code"
+                android:textColor="@color/alive_white"
+                android:textSize="14sp"
+                android:fontFamily="sans-serif-medium"
+                android:background="@drawable/bg_ghost_button"
+                android:stateListAnimator="@null" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- ── Bottom: status + progress ─────────────────────── -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ProgressBar
+            android:id="@+id/claim_progress"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_marginEnd="12dp"
+            android:indeterminateTint="@color/alive_red"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/pairing_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="@color/alive_muted"
+            android:textSize="13sp"
+            android:fontFamily="monospace" />
+
+    </LinearLayout>
+
+</RelativeLayout>

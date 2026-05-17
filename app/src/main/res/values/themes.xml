@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Base theme: no title bar, fullscreen -->
+    <style name="Theme.Alive" parent="android:Theme.NoTitleBar.Fullscreen">
+        <item name="android:windowBackground">@color/alive_ink</item>
+        <item name="android:colorBackground">@color/alive_ink</item>
+        <item name="android:textColorPrimary">@color/alive_white</item>
+        <item name="android:statusBarColor">@color/alive_ink</item>
+    </style>
+
+    <!-- Pairing screen: ink black with red accents -->
+    <style name="Theme.Alive.Pairing" parent="Theme.Alive">
+        <item name="android:windowBackground">@color/alive_ink</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+
+    <!-- Playback screen: pure black -->
+    <style name="Theme.Alive.Playback" parent="android:Theme.Black.NoTitleBar.Fullscreen">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowKeepScreenOn">true</item>
+    </style>
+
+    <!-- Settings screen: dark with white card areas -->
+    <style name="Theme.Alive.Settings" parent="Theme.Alive">
+        <item name="android:windowBackground">@color/alive_ink</item>
+        <item name="android:textColorPrimary">@color/alive_white</item>
+    </style>
+
+</resources>

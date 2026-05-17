@@ -15,27 +15,40 @@
 
         <activity
             android:name="com.alive.player.ui.PairingActivity"
-            android:exported="true">
+            android:exported="true"
+            android:theme="@style/Theme.Alive.Pairing"
+            android:screenOrientation="landscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
 
         <activity
             android:name="com.alive.player.ui.PlaybackActivity"
             android:exported="false"
-            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+            android:theme="@style/Theme.Alive.Playback"
             android:screenOrientation="landscape" />
 
         <activity
             android:name="com.alive.player.settings.SettingsActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:theme="@style/Theme.Alive.Settings"
+            android:screenOrientation="landscape" />
 
         <service
             android:name="com.alive.player.service.PlaybackForegroundService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <receiver
+            android:name="com.alive.player.receiver.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <!-- WorkManager workers -->
         <provider

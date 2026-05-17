@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- alive● wordmark as vector — "alive" in white + red circle dot -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="32dp"
+    android:viewportWidth="120"
+    android:viewportHeight="32">
+    <!-- "alive" text rendered as path is complex; use a TextView approach instead.
+         This file is kept as a placeholder; the real logo is composed via XML layout. -->
+    <path
+        android:fillColor="#dc2626"
+        android:pathData="M114,16 a6,6 0 1,1 0,0.001 Z" />
+</vector>

@@ -2,9 +2,13 @@ package com.alive.player.ui
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.view.View
 import android.widget.Button
 import android.widget.ProgressBar
@@ -33,6 +37,15 @@ class PairingActivity : Activity() {
         val refreshButton = findViewById<Button>(R.id.claim_refresh_button)
         val progress = findViewById<ProgressBar>(R.id.claim_progress)
         val status = findViewById<TextView>(R.id.pairing_status)
+
+        // "Seen." in brand red, rest in white
+        val headline = SpannableStringBuilder("Seen.\nRemembered.\nBought.")
+        headline.setSpan(
+            ForegroundColorSpan(Color.parseColor("#dc2626")),
+            0, 5, // "Seen."
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+        )
+        findViewById<TextView>(R.id.pairing_headline).text = headline
 
         val prefs = DevicePrefs(this)
         if (prefs.isPaired()) {
