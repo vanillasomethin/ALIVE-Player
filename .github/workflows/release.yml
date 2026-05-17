@@ -1,4 +1,4 @@
-name: Release to Play Store
+name: Release
 
 on:
   push:
@@ -11,9 +11,57 @@ on:
         default: internal
 
 jobs:
-  build-and-deploy:
+  # ── Job 1: debug APK → GitHub Release (always runs, no secrets needed) ──────
+  sideload-apk:
+    name: Build debug APK and publish GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: temurin
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      - name: Build debug APK
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Rename APK with version
+        run: |
+          mv app/build/outputs/apk/debug/app-debug.apk \
+             app/build/outputs/apk/debug/alive-player-${{ github.run_number }}.apk
+
+      - name: Create or update GitHub Release (sideload)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: sideload-latest
+          name: "ALIVE Player – Sideload APK (build ${{ github.run_number }})"
+          body: |
+            **Sideload URL for Downloader by AFTVnews:**
+            Paste this URL into the Downloader app on your Android TV / Fire TV device.
+
+            `https://github.com/${{ github.repository }}/releases/download/sideload-latest/alive-player-${{ github.run_number }}.apk`
+
+            This is a debug build intended for testing before Play Store submission.
+            Build: `${{ github.sha }}`
+          files: app/build/outputs/apk/debug/alive-player-${{ github.run_number }}.apk
+          prerelease: true
+
+  # ── Job 2: signed AAB → Play Store (only runs when signing secrets exist) ───
+  play-store:
     name: Build signed AAB and upload to Play Store
     runs-on: ubuntu-latest
+    # Skip if signing secrets are not yet configured
+    if: ${{ vars.PLAY_STORE_ENABLED == 'true' }}
 
     steps:
       - name: Checkout
@@ -37,7 +85,7 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      - name: Build release AAB
+      - name: Build signed release AAB
         env:
           BUILD_NUMBER: ${{ github.run_number }}
           SIGNING_STORE_FILE: ${{ github.workspace }}/release.jks
