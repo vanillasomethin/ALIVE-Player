@@ -35,6 +35,7 @@ class PlaybackEngine(private val context: Context) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var advanceRunnable: Runnable? = null
+    private var retryRunnable: Runnable? = null
 
     private var exoPlayer: ExoPlayer? = null
     private var playerView: PlayerView? = null
@@ -45,6 +46,12 @@ class PlaybackEngine(private val context: Context) {
 
     private var currentWindowIndex: Int = 0
     private var currentItemIndex: Int = 0
+
+    /** Called when the engine has no plan and is waiting for content. */
+    var onWaiting: (() -> Unit)? = null
+
+    /** Called when the engine begins rendering content. */
+    var onPlaying: (() -> Unit)? = null
 
     fun attachViews(playerView: PlayerView, imageView: ImageView, webView: WebView) {
         this.playerView = playerView
@@ -70,15 +77,26 @@ class PlaybackEngine(private val context: Context) {
     }
 
     fun startLoop() {
+        retryRunnable?.let { mainHandler.removeCallbacks(it) }
         CoroutineScope(Dispatchers.IO).launch {
             val plan = PlanLoader.load(context)
             mainHandler.post {
-                if (plan == null || (plan.windows.isEmpty() && plan.fallbackItems.isEmpty())) return@post
-                currentWindowIndex = 0
+                if (plan == null || (plan.windows.isEmpty() && plan.fallbackItems.isEmpty())) {
+                    onWaiting?.invoke()
+                    val retry = Runnable { startLoop() }
+                    retryRunnable = retry
+                    mainHandler.postDelayed(retry, RETRY_INTERVAL_MS)
+                    return@post
+                }
+                onPlaying?.invoke()
                 currentItemIndex = 0
                 advance(plan)
             }
         }
+    }
+
+    companion object {
+        private const val RETRY_INTERVAL_MS = 30_000L
     }
 
     private fun advance(plan: com.alive.player.schedule.Plan) {
@@ -256,6 +274,8 @@ class PlaybackEngine(private val context: Context) {
 
     fun stop() {
         cancelAdvanceTimer()
+        retryRunnable?.let { mainHandler.removeCallbacks(it) }
+        retryRunnable = null
         val now = System.currentTimeMillis()
         currentItem?.let { emitPlayEnd(it, now) }
         currentItem = null

@@ -5,12 +5,15 @@
     android:layout_height="match_parent"
     android:background="@android:color/black">
 
+    <!-- ── Media renderers (hidden until content plays) ───── -->
+
     <androidx.media3.ui.PlayerView
         android:id="@+id/player_view"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="gone"
-        app:use_controller="false" />
+        app:use_controller="false"
+        app:resize_mode="fill" />
 
     <ImageView
         android:id="@+id/image_view"
@@ -24,5 +27,101 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="gone" />
+
+    <!-- ── "Waiting for content" overlay ─────────────────── -->
+    <!--   Shown until the engine has a plan and starts play  -->
+    <RelativeLayout
+        android:id="@+id/waiting_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/alive_ink"
+        android:visibility="visible">
+
+        <!-- Bottom-right corner: alive● wordmark -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:layout_alignParentBottom="true"
+            android:layout_margin="32dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="alive"
+                android:textColor="#33ffffff"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:fontFamily="sans-serif-medium"
+                android:letterSpacing="-0.03" />
+
+            <View
+                android:layout_width="6dp"
+                android:layout_height="6dp"
+                android:layout_marginStart="2dp"
+                android:layout_marginBottom="1dp"
+                android:background="@drawable/shape_dot_red"
+                android:layout_gravity="center_vertical" />
+
+        </LinearLayout>
+
+        <!-- Center: status message -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerInParent="true"
+            android:orientation="vertical"
+            android:gravity="center_horizontal">
+
+            <!-- Large alive● -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="32dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="alive"
+                    android:textColor="@color/alive_white"
+                    android:textSize="64sp"
+                    android:textStyle="bold"
+                    android:fontFamily="sans-serif-medium"
+                    android:letterSpacing="-0.04" />
+
+                <View
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginBottom="4dp"
+                    android:background="@drawable/shape_dot_red"
+                    android:layout_gravity="center_vertical" />
+
+            </LinearLayout>
+
+            <ProgressBar
+                android:id="@+id/waiting_progress"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginBottom="20dp"
+                android:indeterminateTint="@color/alive_red" />
+
+            <TextView
+                android:id="@+id/waiting_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Waiting for content..."
+                android:textColor="@color/alive_muted"
+                android:textSize="13sp"
+                android:fontFamily="monospace"
+                android:letterSpacing="0.08" />
+
+        </LinearLayout>
+
+    </RelativeLayout>
 
 </FrameLayout>
