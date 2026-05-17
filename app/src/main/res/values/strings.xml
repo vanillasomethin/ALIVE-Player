@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">ALIVE Player</string>
+    <string name="notification_channel_name">Playback</string>
+    <string name="notification_playing">Playing scheduled content</string>
+</resources>

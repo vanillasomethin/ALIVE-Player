@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <application
         android:allowBackup="false"
@@ -22,7 +23,9 @@
 
         <activity
             android:name="com.alive.player.ui.PlaybackActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+            android:screenOrientation="landscape" />
 
         <activity
             android:name="com.alive.player.settings.SettingsActivity"
@@ -30,7 +33,8 @@
 
         <service
             android:name="com.alive.player.service.PlaybackForegroundService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- WorkManager workers -->
         <provider
