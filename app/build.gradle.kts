@@ -31,7 +31,7 @@ android {
         }
         val apiUrl = System.getenv("API_BASE_URL")
             ?: localProps.getProperty("apiBaseUrl")
-            ?: "https://api.example.com"
+            ?: "https://studio-beige-seven.vercel.app"
         buildConfigField("String", "API_BASE_URL", "\"$apiUrl\"")
     }
 

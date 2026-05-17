@@ -19,20 +19,18 @@ class PopUploadWorker(
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val prefs = DevicePrefs(applicationContext)
         val token = prefs.getDeviceToken() ?: return@withContext Result.failure()
-        val deviceId = prefs.getDeviceId() ?: return@withContext Result.failure()
         val dao = AppDatabase.get(applicationContext).proofEventDao()
         val pending = dao.getPending()
         if (pending.isEmpty()) return@withContext Result.success()
 
         val payloads = pending.map { event ->
             PopEventPayload(
-                eventId = event.eventId,
-                deviceId = deviceId,
-                contentVersionId = event.contentVersionId,
-                eventType = event.type,
-                timestampIso = Instant.ofEpochMilli(event.timestampUtcEpochMs).toString(),
+                id = event.eventId,
+                mediaId = event.mediaId,
+                scheduleId = event.scheduleId,
+                startedAt = Instant.ofEpochMilli(event.startedAtEpochMs).toString(),
+                endedAt = Instant.ofEpochMilli(event.endedAtEpochMs).toString(),
                 durationMs = event.durationMs,
-                sessionId = event.sessionId,
             )
         }
 

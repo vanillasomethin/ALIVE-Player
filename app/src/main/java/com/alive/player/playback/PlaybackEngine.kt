@@ -29,7 +29,6 @@ import java.util.concurrent.TimeUnit
 
 class PlaybackEngine(private val context: Context) {
 
-    private val sessionId = UUID.randomUUID().toString()
     private var currentItem: PlanItem? = null
     private var playStartMs: Long = 0L
 
@@ -205,19 +204,10 @@ class PlaybackEngine(private val context: Context) {
 
     private fun playItem(item: PlanItem) {
         val now = System.currentTimeMillis()
-        currentItem?.let { emitPlayEnd(it, now) }
+        currentItem?.let { emitCompleteEvent(it, now) }
         currentItem = item
         playStartMs = now
-        emitEvent(
-            ProofEvent(
-                eventId = UUID.randomUUID().toString(),
-                contentVersionId = item.contentVersionId,
-                type = "PLAY_START",
-                timestampUtcEpochMs = now,
-                durationMs = null,
-                sessionId = sessionId,
-            )
-        )
+        // No PLAY_START event — only emit on completion
     }
 
     fun getCurrentPositionMs(): Long? =
@@ -277,7 +267,7 @@ class PlaybackEngine(private val context: Context) {
         retryRunnable?.let { mainHandler.removeCallbacks(it) }
         retryRunnable = null
         val now = System.currentTimeMillis()
-        currentItem?.let { emitPlayEnd(it, now) }
+        currentItem?.let { emitCompleteEvent(it, now) }
         currentItem = null
         mainHandler.post {
             exoPlayer?.release()
@@ -285,15 +275,17 @@ class PlaybackEngine(private val context: Context) {
         }
     }
 
-    private fun emitPlayEnd(item: PlanItem, nowMs: Long) {
+    private fun emitCompleteEvent(item: PlanItem, endMs: Long) {
+        val duration = (endMs - playStartMs).coerceAtLeast(0)
+        if (duration < 500) return  // skip very short plays (< 0.5s)
         emitEvent(
             ProofEvent(
                 eventId = UUID.randomUUID().toString(),
-                contentVersionId = item.contentVersionId,
-                type = "PLAY_END",
-                timestampUtcEpochMs = nowMs,
-                durationMs = (nowMs - playStartMs).coerceAtLeast(0),
-                sessionId = sessionId,
+                mediaId = item.contentVersionId,
+                scheduleId = item.scheduleId,
+                startedAtEpochMs = playStartMs,
+                endedAtEpochMs = endMs,
+                durationMs = duration,
             )
         )
     }
