@@ -27,6 +27,8 @@ class DevicePrefs(context: Context) {
 
     fun getDeviceToken(): String? = prefs.getString(KEY_DEVICE_TOKEN, null)
 
+    fun getDeviceId(): String? = prefs.getString(KEY_DEVICE_ID, null)
+
     fun isPaired(): Boolean = !getDeviceToken().isNullOrBlank()
 
     fun clearAll() {
@@ -34,9 +36,9 @@ class DevicePrefs(context: Context) {
     }
 
     companion object {
-        private const val PREFS_NAME = \"alive_player_prefs\"
-        private const val KEY_DEVICE_TOKEN = \"device_token\"
-        private const val KEY_DEVICE_ID = \"device_id\"
-        private const val KEY_PAIRED_AT = \"paired_at\"
+        private const val PREFS_NAME = "alive_player_prefs"
+        private const val KEY_DEVICE_TOKEN = "device_token"
+        private const val KEY_DEVICE_ID = "device_id"
+        private const val KEY_PAIRED_AT = "paired_at"
     }
 }

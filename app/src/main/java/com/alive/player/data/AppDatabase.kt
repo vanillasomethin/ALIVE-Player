@@ -1,5 +1,29 @@
 package com.alive.player.data
 
-class AppDatabase {
-    // TODO: define Room database and DAOs.
+import android.content.Context
+import androidx.room.Database
+import androidx.room.Room
+import androidx.room.RoomDatabase
+
+@Database(
+    entities = [PlanCache::class, Asset::class, DownloadJob::class, ProofEvent::class, Incident::class],
+    version = 1,
+    exportSchema = false,
+)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun planCacheDao(): PlanCacheDao
+    abstract fun proofEventDao(): ProofEventDao
+
+    companion object {
+        @Volatile private var INSTANCE: AppDatabase? = null
+
+        fun get(context: Context): AppDatabase =
+            INSTANCE ?: synchronized(this) {
+                INSTANCE ?: Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "alive_player.db",
+                ).build().also { INSTANCE = it }
+            }
+    }
 }

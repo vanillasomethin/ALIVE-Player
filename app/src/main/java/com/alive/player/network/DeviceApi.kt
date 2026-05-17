@@ -12,29 +12,22 @@ data class ClaimResponse(
     val deviceId: String,
 )
 
-data class PlanResponse(
-    val planJson: String,
+data class FetchPlanResult(
+    val planJson: String?,
     val etag: String?,
-)
-
-data class PopBatchRequest(
-    val events: List<PopEventPayload>,
+    val notModified: Boolean,
 )
 
 data class PopEventPayload(
     val eventId: String,
-    val contentId: String,
+    val deviceId: String,
+    val contentVersionId: String,
     val eventType: String,
     val timestampIso: String,
+    val durationMs: Long?,
+    val sessionId: String,
 )
 
 data class HeartbeatRequest(
     val timestampIso: String,
 )
-
-interface DeviceApi {
-    suspend fun claimDevice(request: ClaimRequest): ClaimResponse
-    suspend fun fetchPlan(hours: Int, etag: String?): PlanResponse
-    suspend fun uploadEvents(batch: PopBatchRequest)
-    suspend fun sendHeartbeat(request: HeartbeatRequest)
-}

@@ -1,0 +1,4 @@
+-keep class com.alive.player.data.** { *; }
+-keep class com.alive.player.network.** { *; }
+-keep class com.alive.player.schedule.** { *; }
+-keepattributes Signature
