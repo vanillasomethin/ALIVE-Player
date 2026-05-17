@@ -7,7 +7,7 @@ import java.net.URL
 import java.nio.charset.StandardCharsets
 
 class DeviceApiProvider(
-    private val baseUrl: String = "https://api.example.com",
+    private val baseUrl: String = com.alive.player.BuildConfig.API_BASE_URL,
 ) {
     fun registerPairing(): PairingRegisterResponse {
         val payload = JSONObject()

@@ -13,11 +13,20 @@ import android.view.View
 import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
+import com.alive.player.BuildConfig
 import com.alive.player.R
+import com.alive.player.data.AppDatabase
+import com.alive.player.data.PlanCache
+import com.alive.player.network.DemoApiProvider
 import com.alive.player.network.DeviceApiProvider
+import com.alive.player.network.PairingRegisterResponse
+import com.alive.player.network.PairingStatusResponse
 import com.alive.player.settings.DevicePrefs
 import com.alive.player.worker.HeartbeatScheduler
 import com.alive.player.worker.PlanFetchScheduler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
 class PairingActivity : Activity() {
@@ -38,14 +47,19 @@ class PairingActivity : Activity() {
         val progress = findViewById<ProgressBar>(R.id.claim_progress)
         val status = findViewById<TextView>(R.id.pairing_status)
 
-        // "Seen." in brand red, rest in white
+        // "Seen." in brand red
         val headline = SpannableStringBuilder("Seen.\nRemembered.\nBought.")
         headline.setSpan(
             ForegroundColorSpan(Color.parseColor("#dc2626")),
-            0, 5, // "Seen."
+            0, 5,
             Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
         )
         findViewById<TextView>(R.id.pairing_headline).text = headline
+
+        if (BuildConfig.DEMO_MODE) {
+            countdownView.text = "Demo mode — auto-pairs in 8s"
+            findViewById<View>(R.id.demo_badge).visibility = View.VISIBLE
+        }
 
         val prefs = DevicePrefs(this)
         if (prefs.isPaired()) {
@@ -54,6 +68,7 @@ class PairingActivity : Activity() {
         }
 
         fun updateCountdown() {
+            if (BuildConfig.DEMO_MODE) return
             val nowSeconds = System.currentTimeMillis() / 1000
             val remaining = (expiresAtEpochSeconds - nowSeconds).coerceAtLeast(0)
             val minutes = remaining / 60
@@ -66,15 +81,11 @@ class PairingActivity : Activity() {
             val runnable = object : Runnable {
                 override fun run() {
                     updateCountdown()
-                    if (expiresAtEpochSeconds <= System.currentTimeMillis() / 1000) {
+                    if (!BuildConfig.DEMO_MODE &&
+                        expiresAtEpochSeconds <= System.currentTimeMillis() / 1000
+                    ) {
                         status.text = "Code expired. Refreshing..."
-                        registerPairing(
-                            claimCodeView,
-                            countdownView,
-                            progress,
-                            status,
-                            prefs,
-                        )
+                        registerPairing(claimCodeView, countdownView, progress, status, prefs)
                         return
                     }
                     handler.postDelayed(this, 1000)
@@ -94,8 +105,7 @@ class PairingActivity : Activity() {
     }
 
     private fun startPlayback() {
-        val intent = Intent(this, PlaybackActivity::class.java)
-        startActivity(intent)
+        startActivity(Intent(this, PlaybackActivity::class.java))
         finish()
     }
 
@@ -108,31 +118,38 @@ class PairingActivity : Activity() {
         onRegistered: (() -> Unit)? = null,
     ) {
         progress.visibility = View.VISIBLE
-        status.text = "Requesting pairing code..."
+        status.text = if (BuildConfig.DEMO_MODE) "Demo mode — generating code…" else "Requesting pairing code…"
+
         executor.execute {
             try {
-                val api = DeviceApiProvider()
-                val response = api.registerPairing()
+                val response: PairingRegisterResponse = if (BuildConfig.DEMO_MODE) {
+                    DemoApiProvider.registerPairing()
+                } else {
+                    DeviceApiProvider().registerPairing()
+                }
+
                 pairingId = response.pairingId
                 expiresAtEpochSeconds = response.expiresAtEpochSeconds
+
                 runOnUiThread {
                     claimCodeView.text = response.code
-                    status.text = "Enter this code in the console."
+                    status.text = if (BuildConfig.DEMO_MODE) {
+                        "Demo — auto-pairing in 8s"
+                    } else {
+                        "Enter this code in the Alive dashboard"
+                    }
                     progress.visibility = View.GONE
                     onRegistered?.invoke()
                 }
-                schedulePolling(
-                    claimCodeView,
-                    countdownView,
-                    progress,
-                    status,
-                    prefs,
-                    response.pollAfterSeconds,
-                )
+
+                schedulePolling(claimCodeView, countdownView, progress, status, prefs, response.pollAfterSeconds)
+
             } catch (ex: Exception) {
                 runOnUiThread {
-                    status.text = "Failed to register. Check network and retry."
                     progress.visibility = View.GONE
+                    // Show the actual error so it's debuggable
+                    val cause = ex.message?.take(80) ?: ex.javaClass.simpleName
+                    status.text = "Registration failed: $cause"
                 }
             }
         }
@@ -164,61 +181,53 @@ class PairingActivity : Activity() {
         val currentPairingId = pairingId ?: return
         executor.execute {
             try {
-                val api = DeviceApiProvider()
-                val response = api.fetchPairingStatus(currentPairingId)
+                val response: PairingStatusResponse = if (BuildConfig.DEMO_MODE) {
+                    DemoApiProvider.fetchPairingStatus(currentPairingId)
+                } else {
+                    DeviceApiProvider().fetchPairingStatus(currentPairingId)
+                }
+
                 when (response.status) {
                     "CLAIMED" -> {
                         val token = response.deviceToken
                         val deviceId = response.deviceId
                         if (!token.isNullOrBlank() && !deviceId.isNullOrBlank()) {
                             prefs.storePairing(token, deviceId)
-                            HeartbeatScheduler.schedule(applicationContext)
-                            PlanFetchScheduler.schedule(applicationContext)
+
+                            if (BuildConfig.DEMO_MODE) {
+                                // Seed a demo plan so playback starts immediately
+                                CoroutineScope(Dispatchers.IO).launch {
+                                    AppDatabase.get(applicationContext).planCacheDao().upsert(
+                                        PlanCache(
+                                            id = 1,
+                                            planJson = DemoApiProvider.demoScheduleJson(),
+                                            etag = null,
+                                            fetchedAtEpochMs = System.currentTimeMillis(),
+                                        )
+                                    )
+                                }
+                            } else {
+                                HeartbeatScheduler.schedule(applicationContext)
+                                PlanFetchScheduler.schedule(applicationContext)
+                            }
+
                             runOnUiThread { startPlayback() }
                         } else {
-                            runOnUiThread {
-                                status.text = "Pairing succeeded but token missing."
-                            }
+                            runOnUiThread { status.text = "Pairing succeeded but token missing." }
                         }
                     }
-                    "EXPIRED" -> {
-                        runOnUiThread {
-                            status.text = "Code expired. Refreshing..."
-                            registerPairing(
-                                claimCodeView,
-                                countdownView,
-                                progress,
-                                status,
-                                prefs,
-                            )
-                        }
+                    "EXPIRED" -> runOnUiThread {
+                        status.text = "Code expired. Refreshing…"
+                        registerPairing(claimCodeView, countdownView, progress, status, prefs)
                     }
                     else -> {
-                        runOnUiThread {
-                            status.text = "Waiting for pairing..."
-                        }
-                        schedulePolling(
-                            claimCodeView,
-                            countdownView,
-                            progress,
-                            status,
-                            prefs,
-                            response.pollAfterSeconds,
-                        )
+                        runOnUiThread { status.text = "Waiting for pairing…" }
+                        schedulePolling(claimCodeView, countdownView, progress, status, prefs, response.pollAfterSeconds)
                     }
                 }
             } catch (ex: Exception) {
-                runOnUiThread {
-                    status.text = "Polling failed. Retrying..."
-                }
-                schedulePolling(
-                    claimCodeView,
-                    countdownView,
-                    progress,
-                    status,
-                    prefs,
-                    15,
-                )
+                runOnUiThread { status.text = "Polling error: ${ex.message?.take(60)}" }
+                schedulePolling(claimCodeView, countdownView, progress, status, prefs, 15)
             }
         }
     }

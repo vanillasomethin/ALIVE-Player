@@ -23,6 +23,16 @@ android {
         targetSdk = 34
         versionCode = (System.getenv("BUILD_NUMBER") ?: "1").toInt()
         versionName = "1.0.${versionCode}"
+
+        // API base URL — override via local.properties: apiBaseUrl=https://your-server.com
+        val localProps = Properties().also { p ->
+            val f = rootProject.file("local.properties")
+            if (f.exists()) p.load(f.inputStream())
+        }
+        val apiUrl = System.getenv("API_BASE_URL")
+            ?: localProps.getProperty("apiBaseUrl")
+            ?: "https://api.example.com"
+        buildConfigField("String", "API_BASE_URL", "\"$apiUrl\"")
     }
 
     signingConfigs {
@@ -40,7 +50,14 @@ android {
         }
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     buildTypes {
+        debug {
+            buildConfigField("Boolean", "DEMO_MODE", "true")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -49,6 +66,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            buildConfigField("Boolean", "DEMO_MODE", "false")
         }
     }
 
