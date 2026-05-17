@@ -6,6 +6,7 @@ import androidx.work.WorkerParameters
 import com.alive.player.data.AppDatabase
 import com.alive.player.data.PlanCache
 import com.alive.player.network.DeviceApiProvider
+import com.alive.player.schedule.parsePlan
 import com.alive.player.settings.DevicePrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,6 +32,20 @@ class PlanFetchWorker(
                         fetchedAtEpochMs = System.currentTimeMillis(),
                     )
                 )
+                val plan = parsePlan(result.planJson)
+                val allItems = plan.windows.flatMap { it.items } + plan.fallbackItems
+                for (item in allItems) {
+                    val sha256 = item.sha256 ?: continue
+                    val ext = item.ext ?: continue
+                    DownloadWorker.enqueue(
+                        applicationContext,
+                        item.contentVersionId,
+                        "current",
+                        sha256,
+                        item.uri,
+                        ext,
+                    )
+                }
             }
             Result.success()
         } catch (ex: Exception) {

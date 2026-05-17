@@ -11,6 +11,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.alive.player.data.AppDatabase
 import com.alive.player.data.ProofEvent
+import com.alive.player.download.AssetDownloader
 import com.alive.player.schedule.PlanItem
 import com.alive.player.worker.PopUploadWorker
 import androidx.work.BackoffPolicy
@@ -111,6 +112,13 @@ class PlaybackEngine(private val context: Context) {
             return
         }
 
+        val localFile = item.sha256?.let { sha256 ->
+            item.ext?.let { ext ->
+                AssetDownloader.getCachedFile(context, item.contentVersionId, "current", sha256, ext)
+            }
+        }
+        val resolvedUri = if (localFile != null) android.net.Uri.fromFile(localFile) else android.net.Uri.parse(item.uri)
+
         when (item.type) {
             "video" -> {
                 pv.visibility = android.view.View.VISIBLE
@@ -122,7 +130,7 @@ class PlaybackEngine(private val context: Context) {
                 player.clearMediaItems()
                 player.removeListener(videoEndListener)
                 player.addListener(videoEndListener)
-                player.setMediaItem(MediaItem.fromUri(item.uri))
+                player.setMediaItem(MediaItem.fromUri(resolvedUri))
                 player.prepare()
                 player.playWhenReady = true
                 scheduleAdvanceTimer(item)
@@ -132,7 +140,7 @@ class PlaybackEngine(private val context: Context) {
                 iv.visibility = android.view.View.VISIBLE
                 wv.visibility = android.view.View.GONE
 
-                Glide.with(context).load(item.uri).centerCrop().into(iv)
+                Glide.with(context).load(resolvedUri).centerCrop().into(iv)
                 scheduleAdvanceTimer(item)
             }
             "web" -> {
@@ -192,6 +200,58 @@ class PlaybackEngine(private val context: Context) {
                 sessionId = sessionId,
             )
         )
+    }
+
+    fun getCurrentPositionMs(): Long? =
+        if (exoPlayer?.isPlaying == true) exoPlayer?.currentPosition else null
+
+    fun restartCurrentItem() {
+        val item = currentItem ?: return
+        val pv = playerView ?: return
+        val iv = imageView ?: return
+        val wv = webView ?: return
+
+        val localFile = item.sha256?.let { sha256 ->
+            item.ext?.let { ext ->
+                AssetDownloader.getCachedFile(context, item.contentVersionId, "current", sha256, ext)
+            }
+        }
+        val resolvedUri = if (localFile != null) android.net.Uri.fromFile(localFile) else android.net.Uri.parse(item.uri)
+
+        when (item.type) {
+            "video" -> {
+                pv.visibility = android.view.View.VISIBLE
+                iv.visibility = android.view.View.GONE
+                wv.visibility = android.view.View.GONE
+
+                val player = exoPlayer ?: return
+                cancelAdvanceTimer()
+                player.clearMediaItems()
+                player.removeListener(videoEndListener)
+                player.addListener(videoEndListener)
+                player.setMediaItem(MediaItem.fromUri(resolvedUri))
+                player.prepare()
+                player.playWhenReady = true
+                scheduleAdvanceTimer(item)
+            }
+            "image" -> {
+                pv.visibility = android.view.View.GONE
+                iv.visibility = android.view.View.VISIBLE
+                wv.visibility = android.view.View.GONE
+
+                Glide.with(context).load(resolvedUri).centerCrop().into(iv)
+                scheduleAdvanceTimer(item)
+            }
+            "web" -> {
+                pv.visibility = android.view.View.GONE
+                iv.visibility = android.view.View.GONE
+                wv.visibility = android.view.View.VISIBLE
+
+                wv.settings.javaScriptEnabled = false
+                wv.loadUrl(item.uri)
+                scheduleAdvanceTimer(item)
+            }
+        }
     }
 
     fun stop() {

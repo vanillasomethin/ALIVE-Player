@@ -13,6 +13,8 @@ data class PlanItem(
     val durationMs: Long,
     val type: String,
     val uri: String,
+    val sha256: String? = null,
+    val ext: String? = null,
 )
 
 data class Plan(
@@ -28,6 +30,8 @@ fun parsePlan(json: String): Plan {
         type = obj.getString("type"),
         uri = obj.getString("uri"),
         durationMs = obj.getLong("duration_ms"),
+        sha256 = obj.optString("sha256", null).takeIf { !it.isNullOrBlank() },
+        ext = obj.optString("ext", null).takeIf { !it.isNullOrBlank() },
     )
 
     val windowsArr = root.optJSONArray("windows")

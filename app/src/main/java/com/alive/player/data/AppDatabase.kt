@@ -13,6 +13,9 @@ import androidx.room.RoomDatabase
 abstract class AppDatabase : RoomDatabase() {
     abstract fun planCacheDao(): PlanCacheDao
     abstract fun proofEventDao(): ProofEventDao
+    abstract fun assetDao(): AssetDao
+    abstract fun downloadJobDao(): DownloadJobDao
+    abstract fun incidentDao(): IncidentDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
