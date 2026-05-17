@@ -29,6 +29,8 @@ class DevicePrefs(context: Context) {
 
     fun getDeviceId(): String? = prefs.getString(KEY_DEVICE_ID, null)
 
+    fun getPairedAt(): Long? = prefs.getLong(KEY_PAIRED_AT, -1L).takeIf { it >= 0 }
+
     fun isPaired(): Boolean = !getDeviceToken().isNullOrBlank()
 
     fun clearAll() {

@@ -11,12 +11,14 @@ import android.os.IBinder
 import android.os.PowerManager
 import com.alive.player.R
 import com.alive.player.playback.PlaybackEngine
+import com.alive.player.playback.PlaybackWatchdog
 
 class PlaybackForegroundService : Service() {
 
     lateinit var engine: PlaybackEngine
         private set
 
+    private lateinit var watchdog: PlaybackWatchdog
     private lateinit var wakeLock: PowerManager.WakeLock
 
     inner class LocalBinder : Binder() {
@@ -33,6 +35,10 @@ class PlaybackForegroundService : Service() {
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "alive:playback").apply { acquire() }
         engine = PlaybackEngine(applicationContext)
         engine.startLoop()
+        watchdog = PlaybackWatchdog(engine, applicationContext) {
+            engine.startLoop()
+        }
+        watchdog.start()
     }
 
     override fun onBind(intent: Intent): IBinder = binder
@@ -40,6 +46,7 @@ class PlaybackForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
 
     override fun onDestroy() {
+        watchdog.stop()
         engine.stop()
         if (wakeLock.isHeld) wakeLock.release()
         super.onDestroy()

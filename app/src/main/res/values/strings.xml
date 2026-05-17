@@ -2,4 +2,15 @@
     <string name="app_name">ALIVE Player</string>
     <string name="notification_channel_name">Playback</string>
     <string name="notification_playing">Playing scheduled content</string>
+    <string name="settings_title">Device Settings</string>
+    <string name="settings_device_id">Device ID</string>
+    <string name="settings_paired_at">Paired at</string>
+    <string name="settings_last_plan">Last plan fetch</string>
+    <string name="settings_app_version">App version</string>
+    <string name="settings_not_available">—</string>
+    <string name="settings_reset_button">Reset device</string>
+    <string name="settings_reset_confirm_title">Reset device?</string>
+    <string name="settings_reset_confirm_message">This will unpair the device and clear all local data.</string>
+    <string name="settings_reset_confirm_yes">Reset</string>
+    <string name="settings_reset_confirm_cancel">Cancel</string>
 </resources>
