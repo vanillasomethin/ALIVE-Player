@@ -1,7 +1,16 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
+    id("com.github.triplet.play")
+}
+
+// Load keystore.properties if present (local dev); CI injects env vars directly.
+val keystoreProps = Properties().also { props ->
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) props.load(file.inputStream())
 }
 
 android {
@@ -12,18 +21,41 @@ android {
         applicationId = "com.alive.player"
         minSdk = 21
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = (System.getenv("BUILD_NUMBER") ?: "1").toInt()
+        versionName = "1.0.${versionCode}"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file(
+                System.getenv("SIGNING_STORE_FILE")
+                    ?: keystoreProps["storeFile"] as String? ?: "release.jks"
+            )
+            storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+                ?: keystoreProps["storePassword"] as String? ?: ""
+            keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+                ?: keystoreProps["keyAlias"] as String? ?: ""
+            keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
+                ?: keystoreProps["keyPassword"] as String? ?: ""
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
         }
+    }
+
+    bundle {
+        language { enableSplit = true }
+        density { enableSplit = true }
+        abi { enableSplit = true }
     }
 
     compileOptions {
@@ -34,6 +66,15 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+}
+
+play {
+    serviceAccountCredentials.set(
+        file(System.getenv("PLAY_SERVICE_ACCOUNT_JSON") ?: "play-service-account.json")
+    )
+    track.set("internal")          // promote to alpha/beta/production manually in Console
+    defaultToAppBundles.set(true)
+    releaseStatus.set(com.github.triplet.gradle.androidpublisher.ReleaseStatus.COMPLETED)
 }
 
 dependencies {

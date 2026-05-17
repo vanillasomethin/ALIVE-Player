@@ -1,0 +1,5 @@
+Initial release.
+• Device pairing with claim code
+• Scheduled content playback with dayparting
+• Proof-of-play reporting
+• Offline fallback to last known plan

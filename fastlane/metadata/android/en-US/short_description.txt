@@ -1,0 +1,1 @@
+Managed digital signage player for ALIVE-powered displays.
