@@ -15,7 +15,6 @@ class HeartbeatWorker(
         val token = prefs.getDeviceToken() ?: return Result.failure()
         return try {
             DeviceApiProvider().sendHeartbeat(token)
-            HeartbeatScheduler.schedule(applicationContext)
             Result.success()
         } catch (ex: Exception) {
             Result.retry()

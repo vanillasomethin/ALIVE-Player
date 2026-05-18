@@ -10,7 +10,10 @@
 
     <application
         android:allowBackup="false"
-        android:label="ALIVE Player"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:banner="@drawable/ic_tv_banner"
+        android:label="alive"
         android:supportsRtl="true">
 
         <activity

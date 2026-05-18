@@ -14,8 +14,13 @@ import android.widget.RelativeLayout
 import android.widget.TextView
 import androidx.media3.ui.PlayerView
 import com.alive.player.R
+import com.alive.player.data.AppDatabase
 import com.alive.player.service.PlaybackForegroundService
 import com.alive.player.settings.DevicePrefs
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class PlaybackActivity : Activity() {
 
@@ -36,7 +41,7 @@ class PlaybackActivity : Activity() {
 
             eng.onWaiting = {
                 waitingOverlay.visibility = View.VISIBLE
-                waitingStatus.text = "Fetching schedule..."
+                updateWaitingMessage()
             }
             eng.onPlaying = {
                 waitingOverlay.visibility = View.GONE
@@ -63,14 +68,29 @@ class PlaybackActivity : Activity() {
         waitingOverlay = findViewById(R.id.waiting_overlay)
         waitingStatus = findViewById(R.id.waiting_status)
 
-        val deviceId = DevicePrefs(this).getDeviceId()
-        if (!deviceId.isNullOrBlank()) {
-            waitingStatus.text = "Device: $deviceId"
-        }
+        updateWaitingMessage()
 
         val serviceIntent = Intent(this, PlaybackForegroundService::class.java)
         startForegroundService(serviceIntent)
         bindService(serviceIntent, connection, BIND_AUTO_CREATE)
+    }
+
+    private fun updateWaitingMessage() {
+        val prefs = DevicePrefs(this)
+        val deviceId = prefs.getDeviceId()
+        CoroutineScope(Dispatchers.IO).launch {
+            val hasCachedPlan = AppDatabase.get(applicationContext).planCacheDao().get() != null
+            withContext(Dispatchers.Main) {
+                waitingStatus.text = when {
+                    !hasCachedPlan && deviceId != null ->
+                        "Device ID: $deviceId\n\nWaiting for schedule — assign one in wearealive.in/admin"
+                    !hasCachedPlan ->
+                        "Waiting for schedule assignment…"
+                    else ->
+                        "Loading content…"
+                }
+            }
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
