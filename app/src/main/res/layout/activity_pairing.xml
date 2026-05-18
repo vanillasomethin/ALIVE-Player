@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  PairingActivity — TV landscape, full-screen, ink black background.
-  Split layout: left brand column + right code card.
+  PairingActivity — TV landscape, full-screen.
+  Shows the device hardware key so the admin can identify it in the Studio
+  dashboard, then auto-claims via /api/device/claim and waits for a schedule.
 -->
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -9,7 +10,7 @@
     android:background="@color/alive_ink"
     android:padding="48dp">
 
-    <!-- ── Top-left: alive● wordmark ─────────────────────── -->
+    <!-- ── Top-left: alive● wordmark ──────────────────────── -->
     <LinearLayout
         android:id="@+id/logo_row"
         android:layout_width="wrap_content"
@@ -26,10 +27,9 @@
             android:textColor="@color/alive_white"
             android:textSize="22sp"
             android:textStyle="bold"
-            android:letterSpacing="-0.03"
-            android:fontFamily="sans-serif-medium" />
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="-0.03" />
 
-        <!-- Red dot — the ● in alive● -->
         <View
             android:layout_width="9dp"
             android:layout_height="9dp"
@@ -40,20 +40,44 @@
 
     </LinearLayout>
 
-    <!-- ── Top-right: version tag ─────────────────────────── -->
-    <TextView
-        android:id="@+id/version_tag"
+    <!-- ── Top-right: demo badge + version ───────────────── -->
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_alignParentTop="true"
         android:layout_alignParentEnd="true"
-        android:text="TV Player"
-        android:textColor="@color/alive_muted"
-        android:textSize="11sp"
-        android:fontFamily="monospace"
-        android:letterSpacing="0.12" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
 
-    <!-- ── Main content row ───────────────────────────────── -->
+        <TextView
+            android:id="@+id/demo_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="DEMO"
+            android:textColor="@color/alive_white"
+            android:textSize="10sp"
+            android:fontFamily="monospace"
+            android:letterSpacing="0.15"
+            android:background="@drawable/bg_red_button"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="3dp"
+            android:paddingBottom="3dp"
+            android:layout_marginEnd="10dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="TV Player"
+            android:textColor="@color/alive_muted"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
+            android:letterSpacing="0.12" />
+
+    </LinearLayout>
+
+    <!-- ── Main content: left brand + right device card ──── -->
     <LinearLayout
         android:id="@+id/content_row"
         android:layout_width="match_parent"
@@ -62,7 +86,7 @@
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
-        <!-- Left column: brand copy + instructions (55%) -->
+        <!-- Left: brand headline + instructions (55%) -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -70,7 +94,6 @@
             android:orientation="vertical"
             android:paddingEnd="48dp">
 
-            <!-- Eyebrow label -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -81,7 +104,7 @@
                 android:letterSpacing="0.22"
                 android:layout_marginBottom="20dp" />
 
-            <!-- Hero headline: "Seen." in red (set via SpannableString in code) -->
+            <!-- "Seen." in red set via SpannableString in code -->
             <TextView
                 android:id="@+id/pairing_headline"
                 android:layout_width="wrap_content"
@@ -95,27 +118,17 @@
                 android:lineSpacingMultiplier="1.1"
                 android:layout_marginBottom="28dp" />
 
-            <!-- Description -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Enter the code shown on the right into your Alive dashboard to activate this screen."
+                android:text="This screen is registering itself with the Alive platform. Once done, go to your dashboard and assign a schedule to this device."
                 android:textColor="@color/alive_muted"
                 android:textSize="15sp"
-                android:lineSpacingMultiplier="1.5"
-                android:layout_marginBottom="8dp" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Your device will begin playing scheduled content automatically once paired."
-                android:textColor="#4affffff"
-                android:textSize="13sp"
                 android:lineSpacingMultiplier="1.5" />
 
         </LinearLayout>
 
-        <!-- Right column: claim code card (45%) -->
+        <!-- Right: device info card (45%) -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -129,76 +142,61 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="ACTIVATION CODE"
+                android:text="DEVICE ID"
                 android:textColor="@color/alive_muted"
                 android:textSize="10sp"
                 android:fontFamily="monospace"
                 android:letterSpacing="0.22"
-                android:layout_marginBottom="20dp" />
+                android:layout_marginBottom="16dp" />
 
-            <!-- The code itself -->
+            <!-- Hardware key (displayed as formatted chunks) -->
             <TextView
                 android:id="@+id/claim_code_value"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="——————"
+                android:text="Loading…"
                 android:textColor="@color/alive_white"
-                android:textSize="52sp"
+                android:textSize="26sp"
                 android:textStyle="bold"
                 android:fontFamily="monospace"
-                android:letterSpacing="0.18"
-                android:layout_marginBottom="20dp" />
+                android:letterSpacing="0.1"
+                android:layout_marginBottom="8dp" />
 
-            <!-- Separator line -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Use this ID to find this screen in your dashboard"
+                android:textColor="@color/alive_muted"
+                android:textSize="12sp"
+                android:gravity="center"
+                android:lineSpacingMultiplier="1.4"
+                android:layout_marginBottom="24dp" />
+
+            <!-- Separator -->
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
                 android:background="@color/code_card_border"
-                android:layout_marginBottom="20dp" />
+                android:layout_marginBottom="24dp" />
 
-            <!-- Countdown -->
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="24dp">
-
-                <View
-                    android:id="@+id/status_dot"
-                    android:layout_width="7dp"
-                    android:layout_height="7dp"
-                    android:layout_marginEnd="8dp"
-                    android:background="@drawable/shape_dot_red" />
-
-                <TextView
-                    android:id="@+id/claim_code_countdown"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Expires in --:--"
-                    android:textColor="@color/alive_muted"
-                    android:textSize="13sp"
-                    android:fontFamily="monospace" />
-
-            </LinearLayout>
-
-            <!-- Refresh button -->
+            <!-- Retry button — hidden until an error occurs -->
             <Button
                 android:id="@+id/claim_refresh_button"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
-                android:text="Refresh Code"
+                android:text="Retry Connection"
                 android:textColor="@color/alive_white"
                 android:textSize="14sp"
                 android:fontFamily="sans-serif-medium"
                 android:background="@drawable/bg_ghost_button"
-                android:stateListAnimator="@null" />
+                android:stateListAnimator="@null"
+                android:visibility="gone" />
 
         </LinearLayout>
 
     </LinearLayout>
 
-    <!-- ── Bottom: status + progress ─────────────────────── -->
+    <!-- ── Bottom: progress + detail status ──────────────── -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

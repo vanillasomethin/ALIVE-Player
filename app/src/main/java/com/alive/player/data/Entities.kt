@@ -47,11 +47,11 @@ data class DownloadJob(
 data class ProofEvent(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "event_id") val eventId: String,
-    @ColumnInfo(name = "content_version_id") val contentVersionId: String,
-    @ColumnInfo(name = "type") val type: String,
-    @ColumnInfo(name = "timestamp_utc_epoch_ms") val timestampUtcEpochMs: Long,
-    @ColumnInfo(name = "duration_ms") val durationMs: Long?,
-    @ColumnInfo(name = "session_id") val sessionId: String,
+    @ColumnInfo(name = "media_id") val mediaId: String,
+    @ColumnInfo(name = "schedule_id") val scheduleId: String?,
+    @ColumnInfo(name = "started_at_epoch_ms") val startedAtEpochMs: Long,
+    @ColumnInfo(name = "ended_at_epoch_ms") val endedAtEpochMs: Long,
+    @ColumnInfo(name = "duration_ms") val durationMs: Long,
     @ColumnInfo(name = "uploaded") val uploaded: Boolean = false,
 )
 

@@ -29,7 +29,7 @@ class AssetDownloader(private val context: Context) {
         ext: String,
     ): File? = withContext(Dispatchers.IO) {
         val final = finalFile(contentId, version, sha256, ext)
-        if (final.exists() && sha256Matches(final, sha256)) {
+        if (final.exists() && hashMatches(final, sha256)) {
             AppDatabase.get(context).assetDao()
                 .touch(contentId, version, System.currentTimeMillis())
             return@withContext final
@@ -74,7 +74,7 @@ class AssetDownloader(private val context: Context) {
             conn.disconnect()
         }
 
-        if (!sha256Matches(tmp, sha256)) {
+        if (!hashMatches(tmp, sha256)) {
             tmp.delete()
             return@withContext null
         }
@@ -120,11 +120,16 @@ class AssetDownloader(private val context: Context) {
         ): File? {
             val cacheRoot = context.getExternalFilesDir("cache") ?: context.cacheDir
             val file = File(cacheRoot, "assets/$contentId/$version/$sha256.$ext")
-            return if (file.exists() && sha256Matches(file, sha256)) file else null
+            return if (file.exists() && hashMatches(file, sha256)) file else null
         }
 
-        private fun sha256Matches(file: File, expected: String): Boolean {
-            val digest = MessageDigest.getInstance("SHA-256")
+        /**
+         * Verify file integrity. Supports both MD5 (32 hex chars, from studio) and
+         * SHA-256 (64 hex chars) based on the length of the expected hash string.
+         */
+        private fun hashMatches(file: File, expected: String): Boolean {
+            val algorithm = if (expected.length <= 32) "MD5" else "SHA-256"
+            val digest = MessageDigest.getInstance(algorithm)
             file.inputStream().use { input ->
                 val buf = ByteArray(8 * 1024)
                 var n: Int

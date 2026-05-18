@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  alive● wordmark as a self-contained vector.
+  Dimensions: 200×56dp — use with a fixed-size ImageView.
+  The letterforms are drawn as filled paths; the dot is a red circle.
+  Scale from the SVG source at tools.picsart.com or Figma with "Export as vector".
+  Replace this file with your brand's official logo SVG converted to Android vector.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="56dp"
+    android:viewportWidth="200"
+    android:viewportHeight="56">
+
+    <!--
+      Placeholder wordmark: bold "ALIVE" text represented as a clean rectangle
+      label block. Replace the paths below with the actual brand font paths
+      exported from Figma / Illustrator once the final logo file is ready.
+
+      Quick way to get real paths:
+        1. Open Figma → Type "alive" in Poppins ExtraBold
+        2. Flatten to outlines (Ctrl/Cmd+Shift+O)
+        3. Export as SVG → copy <path d="..."> into the <path> below
+    -->
+
+    <!-- Background pill (remove once real paths are in) -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,0 h200 v56 h-200 Z" />
+
+    <!-- "alive" — Poppins-style bold strokes approximated as rectangles -->
+    <!-- A -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="
+          M10,42 L18,14 L26,42 L23,42 L20,32 L16,32 L13,42 Z
+          M16.5,29 H19.5 L18,21 Z" />
+    <!-- L -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M29,14 h4 v24 h10 v4 h-14 Z" />
+    <!-- I -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M46,14 h4 v28 h-4 Z" />
+    <!-- V -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M53,14 h4 L63,38 L69,14 h4 L66,42 H60 Z" />
+    <!-- E -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M76,14 h14 v4 h-10 v7 h9 v4 h-9 v9 h10 v4 h-14 Z" />
+
+    <!-- Red dot ● -->
+    <path
+        android:fillColor="#dc2626"
+        android:pathData="M100,28 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0" />
+
+</vector>

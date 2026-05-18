@@ -10,7 +10,7 @@ interface ProofEventDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(event: ProofEvent)
 
-    @Query("SELECT * FROM proof_events WHERE uploaded = 0 ORDER BY timestamp_utc_epoch_ms ASC LIMIT 200")
+    @Query("SELECT * FROM proof_events WHERE uploaded = 0 ORDER BY started_at_epoch_ms ASC LIMIT 200")
     suspend fun getPending(): List<ProofEvent>
 
     @Query("UPDATE proof_events SET uploaded = 1 WHERE event_id IN (:eventIds)")
