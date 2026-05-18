@@ -1,21 +1,27 @@
 package com.alive.player.worker
 
 import android.content.Context
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
 object HeartbeatScheduler {
-    private const val HEARTBEAT_WORK_NAME = "heartbeat_work"
+    private const val HEARTBEAT_WORK_NAME = "heartbeat_periodic"
 
     fun schedule(context: Context) {
-        val request = OneTimeWorkRequestBuilder<HeartbeatWorker>()
-            .setInitialDelay(60, TimeUnit.SECONDS)
+        val request = PeriodicWorkRequestBuilder<HeartbeatWorker>(1, TimeUnit.MINUTES)
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
             .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             HEARTBEAT_WORK_NAME,
-            ExistingWorkPolicy.REPLACE,
+            ExistingPeriodicWorkPolicy.KEEP,
             request,
         )
     }
