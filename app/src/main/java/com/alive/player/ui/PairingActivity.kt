@@ -24,6 +24,7 @@ import com.alive.player.network.DeviceApiProvider
 import com.alive.player.settings.DevicePrefs
 import com.alive.player.worker.HeartbeatScheduler
 import com.alive.player.worker.PlanFetchScheduler
+import com.alive.player.worker.UpdateScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -137,6 +138,7 @@ class PairingActivity : Activity() {
                 } else {
                     HeartbeatScheduler.schedule(applicationContext)
                     PlanFetchScheduler.schedule(applicationContext)
+                    UpdateScheduler.schedule(applicationContext)
                 }
 
                 val friendlyId  = response.deviceId.take(12).uppercase()

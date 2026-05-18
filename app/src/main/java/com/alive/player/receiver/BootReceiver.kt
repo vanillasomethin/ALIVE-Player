@@ -6,6 +6,9 @@ import android.content.Intent
 import com.alive.player.settings.DevicePrefs
 import com.alive.player.service.PlaybackForegroundService
 import com.alive.player.ui.PairingActivity
+import com.alive.player.worker.HeartbeatScheduler
+import com.alive.player.worker.PlanFetchScheduler
+import com.alive.player.worker.UpdateScheduler
 
 /**
  * Restarts playback automatically after a device reboot.
@@ -17,6 +20,9 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
 
         if (DevicePrefs(context).isPaired()) {
+            HeartbeatScheduler.schedule(context)
+            PlanFetchScheduler.schedule(context)
+            UpdateScheduler.schedule(context)
             val serviceIntent = Intent(context, PlaybackForegroundService::class.java)
             context.startForegroundService(serviceIntent)
         } else {
