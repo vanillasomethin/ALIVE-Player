@@ -35,6 +35,13 @@ class PairingActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Check before inflating to avoid a flash of the pairing UI
+        if (DevicePrefs(this).isPaired()) {
+            startPlayback()
+            return
+        }
+
         setContentView(R.layout.activity_pairing)
 
         val stepRegister = findViewById<LinearLayout>(R.id.card_step_register)
@@ -62,11 +69,6 @@ class PairingActivity : Activity() {
         }
 
         val prefs = DevicePrefs(this)
-        if (prefs.isPaired()) {
-            startPlayback()
-            return
-        }
-
         val hardwareKey = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
             ?: "unknown-device"
         hwKeyView.text = hardwareKey.chunked(4).joinToString("-").uppercase()

@@ -22,7 +22,7 @@
             android:textColor="@color/alive_white"
             android:textSize="22sp"
             android:textStyle="bold"
-            android:fontFamily="sans-serif-medium"
+            android:fontFamily="@font/poppins_bold"
             android:letterSpacing="-0.03" />
 
         <View
@@ -89,7 +89,7 @@
                 android:textColor="@color/alive_white"
                 android:textSize="44sp"
                 android:textStyle="bold"
-                android:fontFamily="sans-serif-medium"
+                android:fontFamily="@font/poppins_bold"
                 android:letterSpacing="-0.03"
                 android:lineSpacingMultiplier="1.1"
                 android:layout_marginBottom="28dp" />
