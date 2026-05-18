@@ -56,7 +56,15 @@ android {
 
     buildTypes {
         debug {
-            buildConfigField("Boolean", "DEMO_MODE", "true")
+            // Override via local.properties: demoMode=true  (default: false → real backend)
+            val localProps = Properties().also { p ->
+                val f = rootProject.file("local.properties")
+                if (f.exists()) p.load(f.inputStream())
+            }
+            val demoMode = System.getenv("DEMO_MODE")
+                ?: localProps.getProperty("demoMode")
+                ?: "false"
+            buildConfigField("Boolean", "DEMO_MODE", demoMode)
         }
         release {
             isMinifyEnabled = true
