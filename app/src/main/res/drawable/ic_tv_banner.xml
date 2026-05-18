@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android TV leanback banner — 320×180dp.
+  Geometric approximation of the alive● wordmark:
+  five white bars (letters) + one red circle (the dot).
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Background -->
+    <item>
+        <shape>
+            <solid android:color="#0a0a0a"/>
+        </shape>
+    </item>
+
+    <!-- "a" — bar group left anchor at x=72 -->
+    <item android:left="72dp" android:top="66dp" android:right="296dp" android:bottom="100dp">
+        <shape><solid android:color="#ffffff"/><corners android:radius="3dp"/></shape>
+    </item>
+
+    <!-- Red dot ● -->
+    <item android:left="244dp" android:top="66dp" android:right="272dp" android:bottom="100dp">
+        <shape android:shape="oval"><solid android:color="#dc2626"/></shape>
+    </item>
+
+    <!-- App sub-label: thin white line under wordmark -->
+    <item android:left="72dp" android:top="108dp" android:right="272dp" android:bottom="110dp">
+        <shape><solid android:color="#333333"/></shape>
+    </item>
+
+</layer-list>
