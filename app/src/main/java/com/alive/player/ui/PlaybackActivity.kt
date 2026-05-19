@@ -9,18 +9,14 @@ import android.os.IBinder
 import android.view.View
 import android.view.WindowManager
 import android.webkit.WebView
+import android.widget.Button
 import android.widget.ImageView
 import android.widget.RelativeLayout
 import android.widget.TextView
 import androidx.media3.ui.PlayerView
 import com.alive.player.R
-import com.alive.player.data.AppDatabase
 import com.alive.player.service.PlaybackForegroundService
-import com.alive.player.settings.DevicePrefs
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import com.alive.player.worker.PlanFetchScheduler
 
 class PlaybackActivity : Activity() {
 
@@ -32,6 +28,7 @@ class PlaybackActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var waitingOverlay: RelativeLayout
     private lateinit var waitingStatus: TextView
+    private lateinit var retryButton: Button
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
@@ -39,9 +36,9 @@ class PlaybackActivity : Activity() {
             val eng = service.engine
             engine = eng
 
-            eng.onWaiting = {
+            eng.onWaiting = { statusLine ->
                 waitingOverlay.visibility = View.VISIBLE
-                updateWaitingMessage()
+                waitingStatus.text = statusLine
             }
             eng.onPlaying = {
                 waitingOverlay.visibility = View.GONE
@@ -63,34 +60,26 @@ class PlaybackActivity : Activity() {
         setContentView(R.layout.activity_playback)
 
         playerView = findViewById(R.id.player_view)
-        imageView = findViewById(R.id.image_view)
-        webView = findViewById(R.id.web_view)
+        imageView  = findViewById(R.id.image_view)
+        webView    = findViewById(R.id.web_view)
         waitingOverlay = findViewById(R.id.waiting_overlay)
-        waitingStatus = findViewById(R.id.waiting_status)
+        waitingStatus  = findViewById(R.id.waiting_status)
+        retryButton    = findViewById(R.id.retry_now_button)
 
-        updateWaitingMessage()
+        retryButton.setOnClickListener {
+            retryButton.isEnabled = false
+            waitingStatus.text = "Fetching schedule…"
+            // Kick an immediate plan fetch then restart the engine loop
+            PlanFetchScheduler.scheduleImmediate(applicationContext)
+            waitingOverlay.postDelayed({
+                retryButton.isEnabled = true
+                engine?.startLoop()
+            }, 3_000)
+        }
 
         val serviceIntent = Intent(this, PlaybackForegroundService::class.java)
         startForegroundService(serviceIntent)
         bindService(serviceIntent, connection, BIND_AUTO_CREATE)
-    }
-
-    private fun updateWaitingMessage() {
-        val prefs = DevicePrefs(this)
-        val deviceId = prefs.getDeviceId()
-        CoroutineScope(Dispatchers.IO).launch {
-            val hasCachedPlan = AppDatabase.get(applicationContext).planCacheDao().get() != null
-            withContext(Dispatchers.Main) {
-                waitingStatus.text = when {
-                    !hasCachedPlan && deviceId != null ->
-                        "Device ID: $deviceId\n\nWaiting for schedule — assign one in wearealive.in/admin"
-                    !hasCachedPlan ->
-                        "Waiting for schedule assignment…"
-                    else ->
-                        "Loading content…"
-                }
-            }
-        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

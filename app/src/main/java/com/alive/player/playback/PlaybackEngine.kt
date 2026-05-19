@@ -11,6 +11,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.alive.player.data.AppDatabase
 import com.alive.player.data.ProofEvent
+import com.alive.player.settings.DevicePrefs
+import com.alive.player.settings.FetchStatus
 import com.alive.player.download.AssetDownloader
 import com.alive.player.schedule.PlanItem
 import com.alive.player.worker.PopUploadWorker
@@ -46,8 +48,8 @@ class PlaybackEngine(private val context: Context) {
     private var currentWindowIndex: Int = 0
     private var currentItemIndex: Int = 0
 
-    /** Called when the engine has no plan and is waiting for content. */
-    var onWaiting: (() -> Unit)? = null
+    /** Called when the engine has no plan. Receives a human-readable status line. */
+    var onWaiting: ((String) -> Unit)? = null
 
     /** Called when the engine begins rendering content. */
     var onPlaying: (() -> Unit)? = null
@@ -77,20 +79,57 @@ class PlaybackEngine(private val context: Context) {
 
     fun startLoop() {
         retryRunnable?.let { mainHandler.removeCallbacks(it) }
+        countdownRunnable?.let { mainHandler.removeCallbacks(it) }
         CoroutineScope(Dispatchers.IO).launch {
             val plan = PlanLoader.load(context)
+            val fetchStatus = DevicePrefs(context).getFetchStatus()
             mainHandler.post {
                 if (plan == null || (plan.windows.isEmpty() && plan.fallbackItems.isEmpty())) {
-                    onWaiting?.invoke()
-                    val retry = Runnable { startLoop() }
-                    retryRunnable = retry
-                    mainHandler.postDelayed(retry, RETRY_INTERVAL_MS)
+                    val statusLine = buildStatusLine(fetchStatus)
+                    onWaiting?.invoke(statusLine)
+                    startRetryCountdown()
                     return@post
                 }
                 onPlaying?.invoke()
                 currentItemIndex = 0
                 advance(plan)
             }
+        }
+    }
+
+    private var countdownRunnable: Runnable? = null
+    private var retrySecondsLeft = (RETRY_INTERVAL_MS / 1000).toInt()
+
+    private fun startRetryCountdown() {
+        retrySecondsLeft = (RETRY_INTERVAL_MS / 1000).toInt()
+        tickCountdown()
+        val retry = Runnable { startLoop() }
+        retryRunnable = retry
+        mainHandler.postDelayed(retry, RETRY_INTERVAL_MS)
+    }
+
+    private fun tickCountdown() {
+        countdownRunnable?.let { mainHandler.removeCallbacks(it) }
+        if (retrySecondsLeft > 0) {
+            val fetchStatus = DevicePrefs(context).getFetchStatus()
+            onWaiting?.invoke(buildStatusLine(fetchStatus, retrySecondsLeft))
+            retrySecondsLeft--
+            val tick = Runnable { tickCountdown() }
+            countdownRunnable = tick
+            mainHandler.postDelayed(tick, 1_000)
+        }
+    }
+
+    private fun buildStatusLine(status: FetchStatus?, secondsLeft: Int? = null): String {
+        val countdown = if (secondsLeft != null && secondsLeft > 0) " · retry in ${secondsLeft}s" else ""
+        return when (status?.name) {
+            FetchStatus.FETCHING.name    -> "Fetching schedule…"
+            FetchStatus.NO_SCHEDULE.name -> "No schedule assigned\n${status.message}$countdown"
+            FetchStatus.ERROR.name       -> "Fetch error: ${status.message}$countdown"
+            FetchStatus.OK.name          -> "Schedule loaded — waiting for content$countdown"
+            FetchStatus.NO_CONTENT.name  -> "${status.message}$countdown"
+            null                         -> "Waiting for schedule…$countdown"
+            else                         -> "Waiting…$countdown"
         }
     }
 
@@ -266,6 +305,8 @@ class PlaybackEngine(private val context: Context) {
         cancelAdvanceTimer()
         retryRunnable?.let { mainHandler.removeCallbacks(it) }
         retryRunnable = null
+        countdownRunnable?.let { mainHandler.removeCallbacks(it) }
+        countdownRunnable = null
         val now = System.currentTimeMillis()
         currentItem?.let { emitCompleteEvent(it, now) }
         currentItem = null
