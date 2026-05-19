@@ -18,6 +18,17 @@ object PlanFetchScheduler {
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .build()
 
+    /** Enqueue a one-shot fetch immediately (e.g. from the manual retry button). */
+    fun scheduleImmediate(context: Context) {
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            IMMEDIATE_WORK_NAME,
+            ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<PlanFetchWorker>()
+                .setConstraints(networkConstraint)
+                .build(),
+        )
+    }
+
     /** Call once after pairing to start the 15-minute polling cadence. */
     fun schedule(context: Context) {
         val periodic = PeriodicWorkRequestBuilder<PlanFetchWorker>(15, TimeUnit.MINUTES)

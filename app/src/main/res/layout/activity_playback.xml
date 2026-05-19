@@ -114,11 +114,26 @@
                 android:id="@+id/waiting_status"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Waiting for content..."
+                android:text="Waiting for content…"
                 android:textColor="@color/alive_muted"
                 android:textSize="13sp"
                 android:fontFamily="monospace"
-                android:letterSpacing="0.08" />
+                android:letterSpacing="0.08"
+                android:gravity="center"
+                android:layout_marginBottom="24dp" />
+
+            <Button
+                android:id="@+id/retry_now_button"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:text="Retry Now"
+                android:textColor="@color/alive_white"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium"
+                android:background="@drawable/bg_ghost_button"
+                android:stateListAnimator="@null"
+                android:paddingStart="24dp"
+                android:paddingEnd="24dp" />
 
         </LinearLayout>
 

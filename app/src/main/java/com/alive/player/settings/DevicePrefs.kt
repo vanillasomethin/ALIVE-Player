@@ -17,6 +17,9 @@ class DevicePrefs(context: Context) {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
     )
 
+    // Plain prefs for non-sensitive diagnostic state
+    private val statusPrefs = context.getSharedPreferences(STATUS_PREFS_NAME, Context.MODE_PRIVATE)
+
     fun storePairing(token: String, deviceId: String) {
         prefs.edit()
             .putString(KEY_DEVICE_TOKEN, token)
@@ -26,21 +29,53 @@ class DevicePrefs(context: Context) {
     }
 
     fun getDeviceToken(): String? = prefs.getString(KEY_DEVICE_TOKEN, null)
-
     fun getDeviceId(): String? = prefs.getString(KEY_DEVICE_ID, null)
-
     fun getPairedAt(): Long? = prefs.getLong(KEY_PAIRED_AT, -1L).takeIf { it >= 0 }
-
     fun isPaired(): Boolean = !getDeviceToken().isNullOrBlank()
+
+    /** Written by PlanFetchWorker after every attempt. */
+    fun setFetchStatus(status: FetchStatus) {
+        statusPrefs.edit()
+            .putString(KEY_FETCH_STATUS, status.name)
+            .putString(KEY_FETCH_MESSAGE, status.message)
+            .putLong(KEY_FETCH_TIME, System.currentTimeMillis())
+            .apply()
+    }
+
+    fun getFetchStatus(): FetchStatus? {
+        val name = statusPrefs.getString(KEY_FETCH_STATUS, null) ?: return null
+        val message = statusPrefs.getString(KEY_FETCH_MESSAGE, "") ?: ""
+        val time = statusPrefs.getLong(KEY_FETCH_TIME, 0)
+        return try { FetchStatus.valueOf(name).also { it.message = message; it.timeMs = time } }
+        catch (_: Exception) { null }
+    }
 
     fun clearAll() {
         prefs.edit().clear().apply()
+        statusPrefs.edit().clear().apply()
     }
 
     companion object {
-        private const val PREFS_NAME = "alive_player_prefs"
-        private const val KEY_DEVICE_TOKEN = "device_token"
-        private const val KEY_DEVICE_ID = "device_id"
-        private const val KEY_PAIRED_AT = "paired_at"
+        private const val PREFS_NAME        = "alive_player_prefs"
+        private const val STATUS_PREFS_NAME = "alive_player_status"
+        private const val KEY_DEVICE_TOKEN  = "device_token"
+        private const val KEY_DEVICE_ID     = "device_id"
+        private const val KEY_PAIRED_AT     = "paired_at"
+        private const val KEY_FETCH_STATUS  = "fetch_status"
+        private const val KEY_FETCH_MESSAGE = "fetch_message"
+        private const val KEY_FETCH_TIME    = "fetch_time"
     }
+}
+
+enum class FetchStatus(var message: String = "", var timeMs: Long = 0) {
+    /** Plan fetched successfully with N items. */
+    OK,
+    /** Server returned a plan but it has no content items yet. */
+    NO_CONTENT,
+    /** No schedule has been assigned to this device in the admin. */
+    NO_SCHEDULE,
+    /** Network or server error. */
+    ERROR,
+    /** Currently in progress. */
+    FETCHING,
 }
