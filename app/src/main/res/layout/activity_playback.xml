@@ -29,7 +29,6 @@
         android:visibility="gone" />
 
     <!-- ── "Waiting for content" overlay ─────────────────── -->
-    <!--   Shown until the engine has a plan and starts play  -->
     <RelativeLayout
         android:id="@+id/waiting_overlay"
         android:layout_width="match_parent"
@@ -67,7 +66,37 @@
 
         </LinearLayout>
 
-        <!-- Center: status message -->
+        <!-- Bottom-center: network status indicator -->
+        <LinearLayout
+            android:id="@+id/network_indicator"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:layout_centerHorizontal="true"
+            android:layout_marginBottom="32dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <View
+                android:id="@+id/network_dot"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/shape_dot_red" />
+
+            <TextView
+                android:id="@+id/network_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="OFFLINE"
+                android:textColor="@color/alive_muted"
+                android:textSize="10sp"
+                android:fontFamily="monospace"
+                android:letterSpacing="0.15" />
+
+        </LinearLayout>
+
+        <!-- Center: alive● logo + status card -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -103,40 +132,216 @@
 
             </LinearLayout>
 
-            <ProgressBar
-                android:id="@+id/waiting_progress"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:layout_marginBottom="20dp"
-                android:indeterminateTint="@color/alive_red" />
-
-            <TextView
-                android:id="@+id/waiting_status"
-                android:layout_width="wrap_content"
+            <!-- Status card -->
+            <LinearLayout
+                android:id="@+id/status_card"
+                android:layout_width="300dp"
                 android:layout_height="wrap_content"
-                android:text="Waiting for content…"
-                android:textColor="@color/alive_muted"
-                android:textSize="13sp"
-                android:fontFamily="monospace"
-                android:letterSpacing="0.08"
-                android:gravity="center"
-                android:layout_marginBottom="24dp" />
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:background="@drawable/bg_code_card"
+                android:padding="24dp">
 
-            <Button
-                android:id="@+id/retry_now_button"
-                android:layout_width="wrap_content"
-                android:layout_height="44dp"
-                android:text="Retry Now"
-                android:textColor="@color/alive_white"
-                android:textSize="13sp"
-                android:fontFamily="sans-serif-medium"
-                android:background="@drawable/bg_ghost_button"
-                android:stateListAnimator="@null"
-                android:paddingStart="24dp"
-                android:paddingEnd="24dp" />
+                <!-- Spinner (FETCHING / null) -->
+                <ProgressBar
+                    android:id="@+id/waiting_progress"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:layout_marginBottom="16dp"
+                    android:indeterminateTint="@color/alive_red" />
+
+                <!-- Status icon label (NO_SCHEDULE / ERROR / OK) -->
+                <TextView
+                    android:id="@+id/status_icon"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="⚠"
+                    android:textSize="28sp"
+                    android:layout_marginBottom="12dp"
+                    android:visibility="gone" />
+
+                <!-- Headline (mirrors the old waiting_status) -->
+                <TextView
+                    android:id="@+id/waiting_status"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Waiting for content…"
+                    android:textColor="@color/alive_white"
+                    android:textSize="14sp"
+                    android:fontFamily="monospace"
+                    android:letterSpacing="0.04"
+                    android:gravity="center"
+                    android:layout_marginBottom="6dp" />
+
+                <!-- Detail line (admin URL, error msg, etc.) -->
+                <TextView
+                    android:id="@+id/status_detail"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text=""
+                    android:textColor="@color/alive_muted"
+                    android:textSize="11sp"
+                    android:fontFamily="monospace"
+                    android:gravity="center"
+                    android:layout_marginBottom="16dp"
+                    android:visibility="gone" />
+
+                <!-- Download progress bar -->
+                <ProgressBar
+                    android:id="@+id/download_progress"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="6dp"
+                    android:progressTint="@color/alive_red"
+                    android:progressBackgroundTint="@color/code_card_border"
+                    android:layout_marginBottom="16dp"
+                    android:visibility="gone" />
+
+                <Button
+                    android:id="@+id/retry_now_button"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:text="Retry Now"
+                    android:textColor="@color/alive_white"
+                    android:textSize="13sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:background="@drawable/bg_ghost_button"
+                    android:stateListAnimator="@null"
+                    android:paddingStart="24dp"
+                    android:paddingEnd="24dp"
+                    android:visibility="gone" />
+
+            </LinearLayout>
 
         </LinearLayout>
 
     </RelativeLayout>
+
+    <!-- ── Offline badge (shows during playback when network is lost) ── -->
+    <TextView
+        android:id="@+id/offline_badge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="20dp"
+        android:text="● OFFLINE"
+        android:textColor="@color/alive_white"
+        android:textSize="10sp"
+        android:fontFamily="monospace"
+        android:letterSpacing="0.1"
+        android:background="@drawable/bg_red_button"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:visibility="gone" />
+
+    <!-- ── Diagnostic overlay (long-press waiting screen → PIN → shown) ── -->
+    <FrameLayout
+        android:id="@+id/diag_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#CC000000"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true">
+
+        <LinearLayout
+            android:layout_width="380dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="vertical"
+            android:background="@drawable/bg_code_card"
+            android:padding="28dp"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="DIAGNOSTICS"
+                android:textColor="@color/alive_red"
+                android:textSize="10sp"
+                android:fontFamily="monospace"
+                android:letterSpacing="0.22"
+                android:layout_marginBottom="20dp" />
+
+            <TextView
+                android:id="@+id/diag_device_id"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Device ID: —"
+                android:textColor="@color/alive_white"
+                android:textSize="13sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/diag_ip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="IP: —"
+                android:textColor="@color/alive_white"
+                android:textSize="13sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/diag_version"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Version: —"
+                android:textColor="@color/alive_white"
+                android:textSize="13sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/diag_last_fetch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Last fetch: —"
+                android:textColor="@color/alive_white"
+                android:textSize="13sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/diag_storage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Storage: —"
+                android:textColor="@color/alive_white"
+                android:textSize="13sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/diag_pending"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Pending uploads: —"
+                android:textColor="@color/alive_white"
+                android:textSize="13sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="20dp" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/code_card_border"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Tap anywhere outside to close"
+                android:textColor="@color/alive_muted"
+                android:textSize="11sp"
+                android:fontFamily="monospace" />
+
+        </LinearLayout>
+
+    </FrameLayout>
 
 </FrameLayout>

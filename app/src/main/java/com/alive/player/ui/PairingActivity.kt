@@ -2,6 +2,7 @@ package com.alive.player.ui
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Bundle
 import android.provider.Settings
@@ -12,9 +13,12 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.MultiFormatWriter
 import com.alive.player.BuildConfig
 import com.alive.player.R
 import com.alive.player.data.AppDatabase
@@ -72,6 +76,17 @@ class PairingActivity : Activity() {
         val hardwareKey = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
             ?: "unknown-device"
         hwKeyView.text = hardwareKey.chunked(4).joinToString("-").uppercase()
+
+        val qrSizePx = (120 * resources.displayMetrics.density).toInt()
+        val adminUrl = "https://wearealive.in/admin/devices/claim?hardwareKey=$hardwareKey"
+        executor.execute {
+            val qrAdmin = makeQr(adminUrl, qrSizePx)
+            val qrKey   = makeQr(hardwareKey, qrSizePx)
+            runOnUiThread {
+                findViewById<ImageView>(R.id.qr_admin_image).setImageBitmap(qrAdmin)
+                findViewById<ImageView>(R.id.qr_key_image).setImageBitmap(qrKey)
+            }
+        }
 
         fun doRegister() {
             val name = nameInput.text.toString().trim().ifBlank { null }
@@ -172,6 +187,16 @@ class PairingActivity : Activity() {
                     retryBtn.visibility = View.VISIBLE
                 }
             }
+        }
+    }
+
+    private fun makeQr(content: String, sizePx: Int): Bitmap {
+        val matrix = MultiFormatWriter().encode(content, BarcodeFormat.QR_CODE, sizePx, sizePx)
+        val pixels = IntArray(sizePx * sizePx) { i ->
+            if (matrix[i % sizePx, i / sizePx]) Color.BLACK else Color.WHITE
+        }
+        return Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888).also {
+            it.setPixels(pixels, 0, sizePx, 0, 0, sizePx, sizePx)
         }
     }
 
