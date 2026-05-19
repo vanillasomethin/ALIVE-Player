@@ -21,4 +21,10 @@ interface DownloadJobDao {
 
     @Query("DELETE FROM download_jobs")
     suspend fun clearAll()
+
+    @Query("SELECT COUNT(*) FROM download_jobs WHERE state = 'DONE'")
+    suspend fun doneCount(): Int
+
+    @Query("SELECT COUNT(*) FROM download_jobs")
+    suspend fun totalCount(): Int
 }
