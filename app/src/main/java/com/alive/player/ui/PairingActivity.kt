@@ -40,6 +40,7 @@ class PairingActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        applyOrientationPref()
         // Check before inflating to avoid a flash of the pairing UI
         if (DevicePrefs(this).isPaired()) {
             startPlayback()

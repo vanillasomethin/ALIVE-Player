@@ -33,7 +33,6 @@ class DevicePrefs(context: Context) {
     fun getPairedAt(): Long? = prefs.getLong(KEY_PAIRED_AT, -1L).takeIf { it >= 0 }
     fun isPaired(): Boolean = !getDeviceToken().isNullOrBlank()
 
-    /** Written by PlanFetchWorker after every attempt. */
     fun setFetchStatus(status: FetchStatus) {
         statusPrefs.edit()
             .putString(KEY_FETCH_STATUS, status.name)
@@ -50,20 +49,38 @@ class DevicePrefs(context: Context) {
         catch (_: Exception) { null }
     }
 
+    fun markPlanUpdated() {
+        statusPrefs.edit().putLong(KEY_PLAN_UPDATED_MS, System.currentTimeMillis()).apply()
+    }
+
+    fun getPlanUpdatedMs(): Long = statusPrefs.getLong(KEY_PLAN_UPDATED_MS, 0L)
+
+    fun setOrientationMode(mode: String) {
+        statusPrefs.edit().putString(KEY_ORIENTATION, mode).apply()
+    }
+
+    fun getOrientationMode(): String =
+        statusPrefs.getString(KEY_ORIENTATION, ORIENTATION_PORTRAIT) ?: ORIENTATION_PORTRAIT
+
     fun clearAll() {
         prefs.edit().clear().apply()
         statusPrefs.edit().clear().apply()
     }
 
     companion object {
-        private const val PREFS_NAME        = "alive_player_prefs"
-        private const val STATUS_PREFS_NAME = "alive_player_status"
-        private const val KEY_DEVICE_TOKEN  = "device_token"
-        private const val KEY_DEVICE_ID     = "device_id"
-        private const val KEY_PAIRED_AT     = "paired_at"
-        private const val KEY_FETCH_STATUS  = "fetch_status"
-        private const val KEY_FETCH_MESSAGE = "fetch_message"
-        private const val KEY_FETCH_TIME    = "fetch_time"
+        private const val PREFS_NAME          = "alive_player_prefs"
+        private const val STATUS_PREFS_NAME   = "alive_player_status"
+        private const val KEY_DEVICE_TOKEN    = "device_token"
+        private const val KEY_DEVICE_ID       = "device_id"
+        private const val KEY_PAIRED_AT       = "paired_at"
+        private const val KEY_FETCH_STATUS    = "fetch_status"
+        private const val KEY_FETCH_MESSAGE   = "fetch_message"
+        private const val KEY_FETCH_TIME      = "fetch_time"
+        private const val KEY_PLAN_UPDATED_MS = "plan_updated_ms"
+        private const val KEY_ORIENTATION     = "orientation_mode"
+
+        const val ORIENTATION_PORTRAIT         = "portrait"
+        const val ORIENTATION_REVERSE_PORTRAIT = "reversePortrait"
     }
 }
 

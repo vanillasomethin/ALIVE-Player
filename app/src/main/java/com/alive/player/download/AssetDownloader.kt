@@ -6,6 +6,7 @@ import com.alive.player.data.Asset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
@@ -50,25 +51,17 @@ class AssetDownloader(private val context: Context) {
             conn.connect()
 
             val responseCode = conn.responseCode
-            if (responseCode != HttpURLConnection.HTTP_OK &&
-                responseCode != HttpURLConnection.HTTP_PARTIAL
-            ) {
-                return@withContext null
-            }
-
-            conn.inputStream.use { input ->
-                tmp.outputStream().let { out ->
-                    if (resumeOffset > 0) {
-                        out.channel.position(resumeOffset)
-                    }
-                    out
-                }.use { output ->
-                    val buf = ByteArray(8 * 1024)
-                    var n: Int
-                    while (input.read(buf).also { n = it } != -1) {
-                        output.write(buf, 0, n)
-                    }
+            when {
+                responseCode == HttpURLConnection.HTTP_PARTIAL && resumeOffset > 0 -> {
+                    // Server honoured the Range header — append to existing tmp
+                    conn.inputStream.use { FileOutputStream(tmp, true).use { out -> it.copyTo(out) } }
                 }
+                responseCode == HttpURLConnection.HTTP_OK -> {
+                    // Full response (first download, or server ignored Range) — overwrite
+                    tmp.parentFile?.mkdirs()
+                    conn.inputStream.use { tmp.outputStream().use { out -> it.copyTo(out) } }
+                }
+                else -> return@withContext null
             }
         } finally {
             conn.disconnect()
@@ -120,7 +113,9 @@ class AssetDownloader(private val context: Context) {
         ): File? {
             val cacheRoot = context.getExternalFilesDir("cache") ?: context.cacheDir
             val file = File(cacheRoot, "assets/$contentId/$version/$sha256.$ext")
-            return if (file.exists() && hashMatches(file, sha256)) file else null
+            // The hash is embedded in the filename and was verified during download.
+            // Re-hashing the file on every play call blocks the main thread for large videos.
+            return if (file.exists()) file else null
         }
 
         /**

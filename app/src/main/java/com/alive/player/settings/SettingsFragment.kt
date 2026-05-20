@@ -42,6 +42,25 @@ class SettingsFragment : Fragment() {
         view.findViewById<Button>(R.id.reset_button).setOnClickListener { confirmReset() }
         view.findViewById<Button>(R.id.clear_cache_button).setOnClickListener { confirmClearCache() }
 
+        val btnPortrait = view.findViewById<Button>(R.id.btn_orientation_portrait)
+        val btnReverse  = view.findViewById<Button>(R.id.btn_orientation_reverse)
+        fun highlightOrientation() {
+            val isReverse = prefs.getOrientationMode() == DevicePrefs.ORIENTATION_REVERSE_PORTRAIT
+            btnPortrait.alpha = if (!isReverse) 1f else 0.4f
+            btnReverse.alpha  = if (isReverse)  1f else 0.4f
+        }
+        highlightOrientation()
+        btnPortrait.setOnClickListener {
+            prefs.setOrientationMode(DevicePrefs.ORIENTATION_PORTRAIT)
+            highlightOrientation()
+            activity.recreate()
+        }
+        btnReverse.setOnClickListener {
+            prefs.setOrientationMode(DevicePrefs.ORIENTATION_REVERSE_PORTRAIT)
+            highlightOrientation()
+            activity.recreate()
+        }
+
         CoroutineScope(Dispatchers.IO).launch {
             val ctx    = activity.applicationContext
             val db     = AppDatabase.get(ctx)

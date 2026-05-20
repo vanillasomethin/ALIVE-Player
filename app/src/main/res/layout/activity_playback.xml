@@ -217,6 +217,109 @@
 
     </RelativeLayout>
 
+    <!-- ── Admin control bar (top-right, always visible) ───────────── -->
+    <LinearLayout
+        android:id="@+id/admin_controls"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="12dp"
+        android:orientation="horizontal"
+        android:alpha="0.55"
+        android:background="@drawable/bg_code_card"
+        android:padding="6dp"
+        android:gravity="center_vertical">
+
+        <Button
+            android:id="@+id/btn_rotate"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:text="⟳"
+            android:textSize="18sp"
+            android:textColor="@color/alive_white"
+            android:background="@null"
+            android:stateListAnimator="@null"
+            android:padding="0dp" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="22dp"
+            android:layout_gravity="center_vertical"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
+            android:background="@color/code_card_border" />
+
+        <Button
+            android:id="@+id/btn_refresh"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:text="↺"
+            android:textSize="18sp"
+            android:textColor="@color/alive_white"
+            android:background="@null"
+            android:stateListAnimator="@null"
+            android:padding="0dp" />
+
+    </LinearLayout>
+
+    <!-- ── New content banner (shown briefly when plan updates) ─────── -->
+    <LinearLayout
+        android:id="@+id/new_content_banner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="#CC1a2332"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:gravity="center"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="↓  New content available — updating schedule"
+            android:textColor="@color/alive_white"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:letterSpacing="0.06" />
+
+    </LinearLayout>
+
+    <!-- ── Download corner widget (bottom-right, both during waiting and play) -->
+    <LinearLayout
+        android:id="@+id/download_corner"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="20dp"
+        android:orientation="vertical"
+        android:background="@drawable/bg_code_card"
+        android:padding="10dp"
+        android:gravity="center_horizontal"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/download_corner_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="↓ 0 / 0"
+            android:textColor="@color/alive_white"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
+            android:layout_marginBottom="6dp" />
+
+        <ProgressBar
+            android:id="@+id/download_corner_bar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="80dp"
+            android:layout_height="4dp"
+            android:progressTint="@color/alive_red"
+            android:progressBackgroundTint="@color/code_card_border" />
+
+    </LinearLayout>
+
     <!-- ── Offline badge (shows during playback when network is lost) ── -->
     <TextView
         android:id="@+id/offline_badge"

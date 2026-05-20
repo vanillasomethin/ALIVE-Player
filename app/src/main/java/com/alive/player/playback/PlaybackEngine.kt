@@ -6,6 +6,8 @@ import android.os.Looper
 import android.webkit.WebView
 import android.widget.ImageView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -186,7 +188,19 @@ class PlaybackEngine(private val context: Context) {
                 player.clearMediaItems()
                 player.removeListener(videoEndListener)
                 player.addListener(videoEndListener)
-                player.setMediaItem(MediaItem.fromUri(resolvedUri))
+                val mimeType = when (item.ext?.lowercase()) {
+                    "mp4"  -> MimeTypes.VIDEO_MP4
+                    "webm" -> MimeTypes.VIDEO_WEBM
+                    "mkv"  -> MimeTypes.VIDEO_MATROSKA
+                    "mov"  -> "video/quicktime"
+                    else   -> null
+                }
+                val mediaItem = if (mimeType != null) {
+                    MediaItem.Builder().setUri(resolvedUri).setMimeType(mimeType).build()
+                } else {
+                    MediaItem.fromUri(resolvedUri)
+                }
+                player.setMediaItem(mediaItem)
                 player.prepare()
                 player.playWhenReady = true
                 scheduleAdvanceTimer(item)
@@ -217,6 +231,13 @@ class PlaybackEngine(private val context: Context) {
                 cancelAdvanceTimer()
                 reloadAndAdvance()
             }
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            android.util.Log.e("PlaybackEngine", "Video error ${error.errorCode}: ${error.message}")
+            cancelAdvanceTimer()
+            // Brief delay before advancing so we don't spin instantly on a broken playlist
+            mainHandler.postDelayed({ reloadAndAdvance() }, 2_000)
         }
     }
 
@@ -276,7 +297,19 @@ class PlaybackEngine(private val context: Context) {
                 player.clearMediaItems()
                 player.removeListener(videoEndListener)
                 player.addListener(videoEndListener)
-                player.setMediaItem(MediaItem.fromUri(resolvedUri))
+                val mimeType = when (item.ext?.lowercase()) {
+                    "mp4"  -> MimeTypes.VIDEO_MP4
+                    "webm" -> MimeTypes.VIDEO_WEBM
+                    "mkv"  -> MimeTypes.VIDEO_MATROSKA
+                    "mov"  -> "video/quicktime"
+                    else   -> null
+                }
+                val mediaItem = if (mimeType != null) {
+                    MediaItem.Builder().setUri(resolvedUri).setMimeType(mimeType).build()
+                } else {
+                    MediaItem.fromUri(resolvedUri)
+                }
+                player.setMediaItem(mediaItem)
                 player.prepare()
                 player.playWhenReady = true
                 scheduleAdvanceTimer(item)
