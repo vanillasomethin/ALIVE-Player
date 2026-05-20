@@ -319,6 +319,82 @@
 
             </LinearLayout>
 
+            <!-- Section: Display ──────────────────────────── -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="DISPLAY"
+                android:textColor="@color/alive_red"
+                android:textSize="10sp"
+                android:fontFamily="monospace"
+                android:letterSpacing="0.22"
+                android:layout_marginBottom="16dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_settings_row"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:paddingTop="16dp"
+                android:paddingBottom="16dp"
+                android:layout_marginBottom="32dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Screen orientation"
+                    android:textColor="@color/alive_muted"
+                    android:textSize="11sp"
+                    android:fontFamily="monospace"
+                    android:letterSpacing="0.08"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Ports on RIGHT side of mounted screen → Portrait  ·  Ports on LEFT → Reverse Portrait"
+                    android:textColor="@color/alive_muted"
+                    android:textSize="10sp"
+                    android:fontFamily="monospace"
+                    android:lineSpacingMultiplier="1.4"
+                    android:layout_marginBottom="16dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_orientation_portrait"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp"
+                        android:text="↑ Portrait"
+                        android:textColor="@color/alive_white"
+                        android:textSize="13sp"
+                        android:fontFamily="sans-serif-medium"
+                        android:background="@drawable/bg_ghost_button"
+                        android:stateListAnimator="@null" />
+
+                    <Button
+                        android:id="@+id/btn_orientation_reverse"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:text="↓ Reverse"
+                        android:textColor="@color/alive_white"
+                        android:textSize="13sp"
+                        android:fontFamily="sans-serif-medium"
+                        android:background="@drawable/bg_ghost_button"
+                        android:stateListAnimator="@null" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
             <!-- Section: Danger zone ─────────────────────── -->
             <TextView
                 android:layout_width="wrap_content"

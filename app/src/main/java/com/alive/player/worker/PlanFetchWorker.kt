@@ -37,8 +37,15 @@ class PlanFetchWorker(
                         fetchedAtEpochMs = System.currentTimeMillis(),
                     )
                 )
+                prefs.markPlanUpdated()
                 for (item in result.items) {
-                    val ext = extFromUrl(item.url) ?: continue
+                    // Fall back to type-based extension for CDN URLs with no path extension
+                    val ext = extFromUrl(item.url)
+                        ?: when (item.type.lowercase()) {
+                            "video" -> "mp4"
+                            "image" -> "jpg"
+                            else    -> null
+                        } ?: continue
                     DownloadWorker.enqueue(
                         applicationContext,
                         item.contentId,

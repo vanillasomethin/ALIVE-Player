@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.net.ConnectivityManager
@@ -13,7 +14,9 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.text.InputType
 import android.view.View
 import android.view.WindowManager
@@ -22,6 +25,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.RelativeLayout
 import android.widget.TextView
@@ -71,6 +75,13 @@ class PlaybackActivity : Activity() {
     private lateinit var diagLastFetch: TextView
     private lateinit var diagStorage: TextView
     private lateinit var diagPending: TextView
+    private lateinit var adminControls: LinearLayout
+    private lateinit var btnRotate: Button
+    private lateinit var btnRefresh: Button
+    private lateinit var newContentBanner: LinearLayout
+    private lateinit var downloadCorner: LinearLayout
+    private lateinit var downloadCornerText: TextView
+    private lateinit var downloadCornerBar: ProgressBar
 
     private lateinit var connectivityManager: ConnectivityManager
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -78,8 +89,50 @@ class PlaybackActivity : Activity() {
         override fun onLost(network: Network) = runOnUiThread { setNetworkState(online = false) }
     }
 
+    private val uiHandler = Handler(Looper.getMainLooper())
+
+    // 5-tap gesture → Settings
     private var tapCount = 0
     private var lastTapMs = 0L
+
+    // Plan-change detection
+    private var lastKnownPlanMs = 0L
+    private val planPollRunnable = object : Runnable {
+        override fun run() {
+            val updatedMs = DevicePrefs(this@PlaybackActivity).getPlanUpdatedMs()
+            when {
+                lastKnownPlanMs == 0L       -> lastKnownPlanMs = updatedMs
+                updatedMs > lastKnownPlanMs -> {
+                    lastKnownPlanMs = updatedMs
+                    showNewContentBanner()
+                    engine?.startLoop()
+                }
+            }
+            uiHandler.postDelayed(this, 30_000)
+        }
+    }
+
+    // Download corner polling
+    private val downloadPollRunnable = object : Runnable {
+        override fun run() {
+            CoroutineScope(Dispatchers.IO).launch {
+                val dao   = AppDatabase.get(applicationContext).downloadJobDao()
+                val done  = dao.doneCount()
+                val total = dao.totalCount()
+                withContext(Dispatchers.Main) {
+                    if (total > 0 && done < total) {
+                        downloadCorner.visibility = View.VISIBLE
+                        downloadCornerText.text = "↓ $done / $total"
+                        downloadCornerBar.max = total
+                        downloadCornerBar.progress = done
+                    } else {
+                        downloadCorner.visibility = View.GONE
+                    }
+                }
+            }
+            uiHandler.postDelayed(this, 5_000)
+        }
+    }
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
@@ -107,41 +160,49 @@ class PlaybackActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyOrientationPref()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_playback)
 
-        playerView     = findViewById(R.id.player_view)
-        imageView      = findViewById(R.id.image_view)
-        webView        = findViewById(R.id.web_view)
-        waitingOverlay = findViewById(R.id.waiting_overlay)
-        waitingProgress = findViewById(R.id.waiting_progress)
-        statusIcon     = findViewById(R.id.status_icon)
-        waitingStatus  = findViewById(R.id.waiting_status)
-        statusDetail   = findViewById(R.id.status_detail)
-        downloadProgress = findViewById(R.id.download_progress)
-        retryButton    = findViewById(R.id.retry_now_button)
-        networkDot     = findViewById(R.id.network_dot)
-        networkLabel   = findViewById(R.id.network_label)
-        offlineBadge   = findViewById(R.id.offline_badge)
-        diagOverlay    = findViewById(R.id.diag_overlay)
-        diagDeviceId   = findViewById(R.id.diag_device_id)
-        diagIp         = findViewById(R.id.diag_ip)
-        diagVersion    = findViewById(R.id.diag_version)
-        diagLastFetch  = findViewById(R.id.diag_last_fetch)
-        diagStorage    = findViewById(R.id.diag_storage)
-        diagPending    = findViewById(R.id.diag_pending)
+        playerView        = findViewById(R.id.player_view)
+        imageView         = findViewById(R.id.image_view)
+        webView           = findViewById(R.id.web_view)
+        waitingOverlay    = findViewById(R.id.waiting_overlay)
+        waitingProgress   = findViewById(R.id.waiting_progress)
+        statusIcon        = findViewById(R.id.status_icon)
+        waitingStatus     = findViewById(R.id.waiting_status)
+        statusDetail      = findViewById(R.id.status_detail)
+        downloadProgress  = findViewById(R.id.download_progress)
+        retryButton       = findViewById(R.id.retry_now_button)
+        networkDot        = findViewById(R.id.network_dot)
+        networkLabel      = findViewById(R.id.network_label)
+        offlineBadge      = findViewById(R.id.offline_badge)
+        diagOverlay       = findViewById(R.id.diag_overlay)
+        diagDeviceId      = findViewById(R.id.diag_device_id)
+        diagIp            = findViewById(R.id.diag_ip)
+        diagVersion       = findViewById(R.id.diag_version)
+        diagLastFetch     = findViewById(R.id.diag_last_fetch)
+        diagStorage       = findViewById(R.id.diag_storage)
+        diagPending       = findViewById(R.id.diag_pending)
+        adminControls     = findViewById(R.id.admin_controls)
+        btnRotate         = findViewById(R.id.btn_rotate)
+        btnRefresh        = findViewById(R.id.btn_refresh)
+        newContentBanner  = findViewById(R.id.new_content_banner)
+        downloadCorner    = findViewById(R.id.download_corner)
+        downloadCornerText = findViewById(R.id.download_corner_text)
+        downloadCornerBar = findViewById(R.id.download_corner_bar)
 
-        retryButton.setOnClickListener {
-            retryButton.isEnabled = false
-            waitingStatus.text = "Fetching schedule…"
-            PlanFetchScheduler.scheduleImmediate(applicationContext)
-            waitingOverlay.postDelayed({
-                retryButton.isEnabled = true
-                engine?.startLoop()
-            }, 3_000)
+        // ── Retry / refresh ──────────────────────────────────────────────
+        retryButton.setOnClickListener { triggerRefresh() }
+        btnRefresh.setOnClickListener  { triggerRefresh() }
+
+        // ── Rotate ───────────────────────────────────────────────────────
+        btnRotate.setOnClickListener {
+            cycleOrientation()
+            flashControl(btnRotate)
         }
 
-        // 5-tap on waiting overlay → open Settings
+        // ── 5-tap → Settings ─────────────────────────────────────────────
         waitingOverlay.setOnClickListener {
             val now = System.currentTimeMillis()
             if (now - lastTapMs > 3_000) tapCount = 0
@@ -152,54 +213,76 @@ class PlaybackActivity : Activity() {
             }
         }
 
-        // Long-press on waiting overlay → PIN-protected diagnostic overlay
+        // ── Long-press → diagnostic overlay ──────────────────────────────
         waitingOverlay.setOnLongClickListener {
             showPinDialog()
             true
         }
 
-        // Tap diag overlay scrim to dismiss
-        diagOverlay.setOnClickListener {
-            diagOverlay.visibility = View.GONE
-        }
+        // ── Diag overlay dismiss ──────────────────────────────────────────
+        diagOverlay.setOnClickListener { diagOverlay.visibility = View.GONE }
 
-        // Connectivity
+        // ── Connectivity ─────────────────────────────────────────────────
         connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val req = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
-        connectivityManager.registerNetworkCallback(req, networkCallback)
-        // Set initial state
-        val isOnline = connectivityManager.getNetworkCapabilities(
-            connectivityManager.activeNetwork
-        )?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        connectivityManager.registerNetworkCallback(
+            NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build(),
+            networkCallback,
+        )
+        val isOnline = connectivityManager
+            .getNetworkCapabilities(connectivityManager.activeNetwork)
+            ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
         setNetworkState(isOnline)
+
+        // ── Start polls ───────────────────────────────────────────────────
+        uiHandler.post(planPollRunnable)
+        uiHandler.post(downloadPollRunnable)
 
         val serviceIntent = Intent(this, PlaybackForegroundService::class.java)
         startForegroundService(serviceIntent)
         bindService(serviceIntent, connection, BIND_AUTO_CREATE)
     }
 
+    private fun triggerRefresh() {
+        retryButton.isEnabled = false
+        waitingStatus.text = "Fetching schedule…"
+        flashControl(btnRefresh)
+        PlanFetchScheduler.scheduleImmediate(applicationContext)
+        uiHandler.postDelayed({
+            retryButton.isEnabled = true
+            engine?.startLoop()
+        }, 3_000)
+    }
+
+    private fun flashControl(view: View) {
+        view.alpha = 1f
+        uiHandler.postDelayed({ view.alpha = 1f; adminControls.alpha = 0.55f }, 800)
+        adminControls.alpha = 1f
+    }
+
+    private fun showNewContentBanner() {
+        newContentBanner.visibility = View.VISIBLE
+        uiHandler.postDelayed({ newContentBanner.visibility = View.GONE }, 4_000)
+    }
+
     private fun setNetworkState(online: Boolean) {
         val dotColor = if (online) Color.parseColor("#22c55e") else Color.parseColor("#dc2626")
-        val dotDrawable = GradientDrawable().apply {
+        networkDot.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(dotColor)
         }
-        networkDot.background = dotDrawable
         networkLabel.text = if (online) "ONLINE" else "OFFLINE"
-        offlineBadge.visibility = if (online || waitingOverlay.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        offlineBadge.visibility =
+            if (online || waitingOverlay.visibility == View.VISIBLE) View.GONE else View.VISIBLE
     }
 
     private fun updateStatusCard(statusLine: String) {
         val fetchStatus = DevicePrefs(this).getFetchStatus()
-
         when (fetchStatus?.name) {
             FetchStatus.NO_SCHEDULE.name -> {
                 waitingProgress.visibility = View.GONE
-                statusIcon.visibility = View.VISIBLE
-                statusIcon.text = "⚠"
-                statusIcon.setTextColor(Color.parseColor("#f59e0b"))
+                statusIcon.apply { visibility = View.VISIBLE; text = "⚠"; setTextColor(Color.parseColor("#f59e0b")) }
                 waitingStatus.text = "No schedule assigned"
                 showDetail("wearealive.in/admin → assign a schedule")
                 downloadProgress.visibility = View.GONE
@@ -207,12 +290,9 @@ class PlaybackActivity : Activity() {
             }
             FetchStatus.ERROR.name -> {
                 waitingProgress.visibility = View.GONE
-                statusIcon.visibility = View.VISIBLE
-                statusIcon.text = "✕"
-                statusIcon.setTextColor(Color.parseColor("#dc2626"))
+                statusIcon.apply { visibility = View.VISIBLE; text = "✕"; setTextColor(Color.parseColor("#dc2626")) }
                 waitingStatus.text = "Connection error"
-                val msg = fetchStatus.message.take(80).ifBlank { "Unknown error" }
-                showDetail(msg)
+                showDetail(fetchStatus.message.take(80).ifBlank { "Unknown error" })
                 downloadProgress.visibility = View.GONE
                 retryButton.visibility = View.VISIBLE
             }
@@ -225,28 +305,21 @@ class PlaybackActivity : Activity() {
                 retryButton.visibility = View.GONE
             }
             FetchStatus.OK.name, FetchStatus.NO_CONTENT.name -> {
-                // Show download progress if items are still downloading
                 CoroutineScope(Dispatchers.IO).launch {
-                    val dao = AppDatabase.get(applicationContext).downloadJobDao()
+                    val dao   = AppDatabase.get(applicationContext).downloadJobDao()
                     val done  = dao.doneCount()
                     val total = dao.totalCount()
                     withContext(Dispatchers.Main) {
                         if (total > 0 && done < total) {
                             waitingProgress.visibility = View.GONE
-                            statusIcon.visibility = View.VISIBLE
-                            statusIcon.text = "↓"
-                            statusIcon.setTextColor(Color.parseColor("#60a5fa"))
+                            statusIcon.apply { visibility = View.VISIBLE; text = "↓"; setTextColor(Color.parseColor("#60a5fa")) }
                             waitingStatus.text = "Downloading content ($done / $total)"
                             statusDetail.visibility = View.GONE
-                            downloadProgress.visibility = View.VISIBLE
-                            downloadProgress.max = total
-                            downloadProgress.progress = done
+                            downloadProgress.apply { visibility = View.VISIBLE; max = total; progress = done }
                             retryButton.visibility = View.GONE
                         } else {
                             waitingProgress.visibility = View.GONE
-                            statusIcon.visibility = View.VISIBLE
-                            statusIcon.text = "✓"
-                            statusIcon.setTextColor(Color.parseColor("#22c55e"))
+                            statusIcon.apply { visibility = View.VISIBLE; text = "✓"; setTextColor(Color.parseColor("#22c55e")) }
                             waitingStatus.text = "Schedule synced — starting soon"
                             statusDetail.visibility = View.GONE
                             downloadProgress.visibility = View.GONE
@@ -257,7 +330,6 @@ class PlaybackActivity : Activity() {
                 return
             }
             else -> {
-                // null / unknown — generic spinner
                 waitingProgress.visibility = View.VISIBLE
                 statusIcon.visibility = View.GONE
                 waitingStatus.text = statusLine.lines().firstOrNull() ?: "Waiting for schedule…"
@@ -285,13 +357,10 @@ class PlaybackActivity : Activity() {
             .setMessage("Enter PIN (last 4 characters of the Device ID shown in admin)")
             .setView(pinInput)
             .setPositiveButton("Open") { _, _ ->
-                val entered = pinInput.text.toString().uppercase()
+                val entered  = pinInput.text.toString().uppercase()
                 val expected = DevicePrefs(this).getDeviceId()?.takeLast(4)?.uppercase() ?: ""
-                if (entered == expected) {
-                    loadAndShowDiagOverlay()
-                } else {
-                    Toast.makeText(this, "Incorrect PIN", Toast.LENGTH_SHORT).show()
-                }
+                if (entered == expected) loadAndShowDiagOverlay()
+                else Toast.makeText(this, "Incorrect PIN", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -299,15 +368,13 @@ class PlaybackActivity : Activity() {
 
     private fun loadAndShowDiagOverlay() {
         CoroutineScope(Dispatchers.IO).launch {
-            val prefs = DevicePrefs(applicationContext)
-            val db    = AppDatabase.get(applicationContext)
-
+            val prefs       = DevicePrefs(applicationContext)
+            val db          = AppDatabase.get(applicationContext)
             val deviceId    = prefs.getDeviceId() ?: "—"
             val ip          = getLocalIpAddress()
             val version     = BuildConfig.VERSION_NAME
             val fetchStatus = prefs.getFetchStatus()
-            val lastFetch   = if (fetchStatus != null && fetchStatus.timeMs > 0)
-                relativeTime(fetchStatus.timeMs) else "—"
+            val lastFetch   = if (fetchStatus != null && fetchStatus.timeMs > 0) relativeTime(fetchStatus.timeMs) else "—"
             val cacheDir    = applicationContext.getExternalFilesDir("cache") ?: applicationContext.cacheDir
             val cacheMb     = dirSizeBytes(cacheDir) / 1024 / 1024
             val freeMb      = android.os.StatFs(cacheDir.path).availableBytes / 1024 / 1024
@@ -339,11 +406,17 @@ class PlaybackActivity : Activity() {
     private fun relativeTime(epochMs: Long): String {
         val diffMs = System.currentTimeMillis() - epochMs
         return when {
-            diffMs < 60_000      -> "just now"
-            diffMs < 3_600_000   -> "${diffMs / 60_000}m ago"
-            diffMs < 86_400_000  -> "${diffMs / 3_600_000}h ago"
-            else                 -> SimpleDateFormat("MMM d HH:mm", Locale.getDefault()).format(Date(epochMs))
+            diffMs < 60_000     -> "just now"
+            diffMs < 3_600_000  -> "${diffMs / 60_000}m ago"
+            diffMs < 86_400_000 -> "${diffMs / 3_600_000}h ago"
+            else                -> SimpleDateFormat("MMM d HH:mm", Locale.getDefault()).format(Date(epochMs))
         }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Re-apply fullscreen after orientation change (system may clear UI flags)
+        window.decorView.postDelayed({ onWindowFocusChanged(true) }, 100)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -370,6 +443,7 @@ class PlaybackActivity : Activity() {
             bound = false
         }
         runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
+        uiHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
 

@@ -38,14 +38,19 @@ fun parsePlan(json: String): Plan {
         val items = buildList {
             for (i in 0 until itemsArr.length()) {
                 val o = itemsArr.getJSONObject(i)
-                val url = o.getString("url")
+                val url  = o.getString("url")
+                val type = o.getString("type").lowercase()
                 add(PlanItem(
                     contentVersionId = o.getString("contentId"),
                     durationMs = o.getLong("durationMs"),
-                    type = o.getString("type").lowercase(),
+                    type = type,
                     uri = url,
                     sha256 = o.optString("md5", null).takeIf { !it.isNullOrBlank() },
-                    ext = extFromUrl(url),
+                    ext = extFromUrl(url) ?: when (type) {
+                        "video" -> "mp4"
+                        "image" -> "jpg"
+                        else    -> null
+                    },
                     scheduleId = scheduleId,
                 ))
             }

@@ -21,8 +21,7 @@
         <activity
             android:name="com.alive.player.ui.PairingActivity"
             android:exported="true"
-            android:theme="@style/Theme.Alive.Pairing"
-            android:screenOrientation="landscape">
+            android:theme="@style/Theme.Alive.Pairing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -30,17 +29,20 @@
             </intent-filter>
         </activity>
 
+        <!--
+            configChanges declared so requestedOrientation rotates without recreating the
+            Activity — the foreground service and ExoPlayer keep running uninterrupted.
+        -->
         <activity
             android:name="com.alive.player.ui.PlaybackActivity"
             android:exported="false"
             android:theme="@style/Theme.Alive.Playback"
-            android:screenOrientation="landscape" />
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize" />
 
         <activity
             android:name="com.alive.player.settings.SettingsActivity"
             android:exported="false"
-            android:theme="@style/Theme.Alive.Settings"
-            android:screenOrientation="landscape" />
+            android:theme="@style/Theme.Alive.Settings" />
 
         <service
             android:name="com.alive.player.service.PlaybackForegroundService"
