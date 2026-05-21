@@ -16,12 +16,12 @@ val keystoreProps = Properties().also { props ->
 
 android {
     namespace = "com.alive.player"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.alive.player"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = (System.getenv("BUILD_NUMBER") ?: "1").toInt()
         versionName = "1.0.${versionCode}"
 
