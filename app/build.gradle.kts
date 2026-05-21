@@ -5,6 +5,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
     id("com.github.triplet.play")
+    id("com.google.gms.google-services")
 }
 
 // Load keystore.properties if present (local dev); CI injects env vars directly.
@@ -119,4 +120,7 @@ dependencies {
     implementation("androidx.media3:media3-ui:$media3Version")
     implementation("com.github.bumptech.glide:glide:4.16.0")
     implementation("com.google.zxing:core:3.5.2")
+
+    implementation(platform("com.google.firebase:firebase-bom:32.8.1"))
+    implementation("com.google.firebase:firebase-messaging-ktx")
 }

@@ -142,6 +142,12 @@ class PairingActivity : Activity() {
 
                 prefs.storePairing(response.token, response.deviceId)
 
+                // Upload FCM token if Firebase already assigned one before pairing completed.
+                val fcmToken = prefs.getFcmToken()
+                if (fcmToken != null && !BuildConfig.DEMO_MODE) {
+                    try { DeviceApiProvider().updateFcmToken(response.token, fcmToken) } catch (_: Exception) {}
+                }
+
                 if (BuildConfig.DEMO_MODE) {
                     CoroutineScope(Dispatchers.IO).launch {
                         AppDatabase.get(applicationContext).planCacheDao().upsert(
