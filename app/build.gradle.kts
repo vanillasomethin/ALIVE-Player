@@ -122,5 +122,5 @@ dependencies {
     implementation("com.google.zxing:core:3.5.2")
 
     implementation(platform("com.google.firebase:firebase-bom:34.13.0"))
-    implementation("com.google.firebase:firebase-messaging-ktx")
+    implementation("com.google.firebase:firebase-messaging")
 }
