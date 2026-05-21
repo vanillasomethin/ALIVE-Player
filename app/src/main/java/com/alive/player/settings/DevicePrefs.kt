@@ -62,6 +62,12 @@ class DevicePrefs(context: Context) {
     fun getOrientationMode(): String =
         statusPrefs.getString(KEY_ORIENTATION, ORIENTATION_PORTRAIT) ?: ORIENTATION_PORTRAIT
 
+    fun setFcmToken(token: String) {
+        statusPrefs.edit().putString(KEY_FCM_TOKEN, token).apply()
+    }
+
+    fun getFcmToken(): String? = statusPrefs.getString(KEY_FCM_TOKEN, null)
+
     fun clearAll() {
         prefs.edit().clear().apply()
         statusPrefs.edit().clear().apply()
@@ -78,6 +84,7 @@ class DevicePrefs(context: Context) {
         private const val KEY_FETCH_TIME      = "fetch_time"
         private const val KEY_PLAN_UPDATED_MS = "plan_updated_ms"
         private const val KEY_ORIENTATION     = "orientation_mode"
+        private const val KEY_FCM_TOKEN       = "fcm_token"
 
         const val ORIENTATION_PORTRAIT         = "portrait"
         const val ORIENTATION_REVERSE_PORTRAIT = "reversePortrait"

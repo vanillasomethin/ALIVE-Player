@@ -106,6 +106,10 @@ class DeviceApiProvider(
         try { postJson("/api/device/ping", payload, deviceToken) } catch (_: Exception) {}
     }
 
+    fun updateFcmToken(deviceToken: String, fcmToken: String) {
+        postJson("/api/device/fcm-token", JSONObject().put("fcmToken", fcmToken), deviceToken)
+    }
+
     private fun postJson(path: String, payload: JSONObject, token: String?): JSONObject {
         val url = URL(baseUrl + path)
         val conn = url.openConnection() as HttpURLConnection
