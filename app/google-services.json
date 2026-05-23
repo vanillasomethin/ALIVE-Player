@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "000000000000",
-    "project_id": "alive-player-placeholder",
-    "storage_bucket": "alive-player-placeholder.appspot.com"
+    "project_number": "780681503687",
+    "project_id": "alive-player",
+    "storage_bucket": "alive-player.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+        "mobilesdk_app_id": "1:780681503687:android:971ca1c1cc0bcb62d2afe2",
         "android_client_info": {
           "package_name": "com.alive.player"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "REPLACE_WITH_REAL_FIREBASE_API_KEY"
+          "current_key": "AIzaSyC8858RlSbup125A1suBV0y1obIPaR043A"
         }
       ],
       "services": {
