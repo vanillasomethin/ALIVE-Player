@@ -65,7 +65,6 @@ jobs:
   play-store:
     name: Build signed AAB and upload to Play Store
     runs-on: ubuntu-latest
-    if: ${{ secrets.SIGNING_STORE_FILE_BASE64 != '' }}
 
     steps:
       - name: Checkout
@@ -102,7 +101,7 @@ jobs:
           retention-days: 30
 
       - name: Publish to Play Store
-        if: ${{ secrets.PLAY_SERVICE_ACCOUNT_KEY_BASE64 != '' }}
+        if: ${{ vars.PLAY_STORE_ENABLED == 'true' }}
         env:
           BUILD_NUMBER: ${{ github.run_number }}
           SIGNING_STORE_FILE: ${{ github.workspace }}/release.jks
