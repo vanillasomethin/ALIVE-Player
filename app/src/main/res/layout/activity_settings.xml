@@ -32,7 +32,7 @@
                 android:textColor="@color/alive_white"
                 android:textSize="20sp"
                 android:textStyle="bold"
-                android:fontFamily="sans-serif-medium"
+                android:fontFamily="@font/poppins_bold"
                 android:letterSpacing="-0.03" />
 
             <View
@@ -51,7 +51,7 @@
             android:text="Device Settings"
             android:textColor="@color/alive_muted"
             android:textSize="12sp"
-            android:fontFamily="monospace"
+            android:fontFamily="@font/poppins_regular"
             android:letterSpacing="0.1" />
 
     </LinearLayout>
@@ -84,7 +84,7 @@
                 android:text="DEVICE INFO"
                 android:textColor="@color/alive_red"
                 android:textSize="10sp"
-                android:fontFamily="monospace"
+                android:fontFamily="@font/poppins_regular"
                 android:letterSpacing="0.22"
                 android:layout_marginBottom="16dp" />
 
@@ -106,7 +106,7 @@
                     android:text="Device ID"
                     android:textColor="@color/alive_muted"
                     android:textSize="11sp"
-                    android:fontFamily="monospace"
+                    android:fontFamily="@font/poppins_regular"
                     android:letterSpacing="0.08"
                     android:layout_marginBottom="4dp" />
 
@@ -117,7 +117,7 @@
                     android:text="—"
                     android:textColor="@color/alive_white"
                     android:textSize="14sp"
-                    android:fontFamily="monospace" />
+                    android:fontFamily="@font/poppins_regular" />
 
             </LinearLayout>
 
@@ -139,7 +139,7 @@
                     android:text="Paired at"
                     android:textColor="@color/alive_muted"
                     android:textSize="11sp"
-                    android:fontFamily="monospace"
+                    android:fontFamily="@font/poppins_regular"
                     android:letterSpacing="0.08"
                     android:layout_marginBottom="4dp" />
 
@@ -150,7 +150,7 @@
                     android:text="—"
                     android:textColor="@color/alive_white"
                     android:textSize="14sp"
-                    android:fontFamily="monospace" />
+                    android:fontFamily="@font/poppins_regular" />
 
             </LinearLayout>
 
@@ -172,7 +172,7 @@
                     android:text="Last plan fetch"
                     android:textColor="@color/alive_muted"
                     android:textSize="11sp"
-                    android:fontFamily="monospace"
+                    android:fontFamily="@font/poppins_regular"
                     android:letterSpacing="0.08"
                     android:layout_marginBottom="4dp" />
 
@@ -183,7 +183,7 @@
                     android:text="—"
                     android:textColor="@color/alive_white"
                     android:textSize="14sp"
-                    android:fontFamily="monospace" />
+                    android:fontFamily="@font/poppins_regular" />
 
             </LinearLayout>
 
@@ -205,7 +205,7 @@
                     android:text="App version"
                     android:textColor="@color/alive_muted"
                     android:textSize="11sp"
-                    android:fontFamily="monospace"
+                    android:fontFamily="@font/poppins_regular"
                     android:letterSpacing="0.08"
                     android:layout_marginBottom="4dp" />
 
@@ -216,7 +216,7 @@
                     android:text="—"
                     android:textColor="@color/alive_white"
                     android:textSize="14sp"
-                    android:fontFamily="monospace" />
+                    android:fontFamily="@font/poppins_regular" />
 
             </LinearLayout>
 
@@ -238,7 +238,7 @@
                     android:text="Network"
                     android:textColor="@color/alive_muted"
                     android:textSize="11sp"
-                    android:fontFamily="monospace"
+                    android:fontFamily="@font/poppins_regular"
                     android:letterSpacing="0.08"
                     android:layout_marginBottom="4dp" />
 
@@ -249,7 +249,7 @@
                     android:text="—"
                     android:textColor="@color/alive_white"
                     android:textSize="14sp"
-                    android:fontFamily="monospace" />
+                    android:fontFamily="@font/poppins_regular" />
 
             </LinearLayout>
 
@@ -271,7 +271,7 @@
                     android:text="Storage"
                     android:textColor="@color/alive_muted"
                     android:textSize="11sp"
-                    android:fontFamily="monospace"
+                    android:fontFamily="@font/poppins_regular"
                     android:letterSpacing="0.08"
                     android:layout_marginBottom="4dp" />
 
@@ -282,7 +282,7 @@
                     android:text="—"
                     android:textColor="@color/alive_white"
                     android:textSize="14sp"
-                    android:fontFamily="monospace" />
+                    android:fontFamily="@font/poppins_regular" />
 
             </LinearLayout>
 
@@ -304,7 +304,7 @@
                     android:text="Pending uploads"
                     android:textColor="@color/alive_muted"
                     android:textSize="11sp"
-                    android:fontFamily="monospace"
+                    android:fontFamily="@font/poppins_regular"
                     android:letterSpacing="0.08"
                     android:layout_marginBottom="4dp" />
 
@@ -315,7 +315,7 @@
                     android:text="—"
                     android:textColor="@color/alive_white"
                     android:textSize="14sp"
-                    android:fontFamily="monospace" />
+                    android:fontFamily="@font/poppins_regular" />
 
             </LinearLayout>
 
@@ -326,7 +326,7 @@
                 android:text="DISPLAY"
                 android:textColor="@color/alive_red"
                 android:textSize="10sp"
-                android:fontFamily="monospace"
+                android:fontFamily="@font/poppins_regular"
                 android:letterSpacing="0.22"
                 android:layout_marginBottom="16dp" />
 
@@ -347,7 +347,7 @@
                     android:text="Screen orientation"
                     android:textColor="@color/alive_muted"
                     android:textSize="11sp"
-                    android:fontFamily="monospace"
+                    android:fontFamily="@font/poppins_regular"
                     android:letterSpacing="0.08"
                     android:layout_marginBottom="4dp" />
 
@@ -357,7 +357,7 @@
                     android:text="Ports on RIGHT side of mounted screen → Portrait  ·  Ports on LEFT → Reverse Portrait"
                     android:textColor="@color/alive_muted"
                     android:textSize="10sp"
-                    android:fontFamily="monospace"
+                    android:fontFamily="@font/poppins_regular"
                     android:lineSpacingMultiplier="1.4"
                     android:layout_marginBottom="16dp" />
 
@@ -375,7 +375,7 @@
                         android:text="↑ Portrait"
                         android:textColor="@color/alive_white"
                         android:textSize="13sp"
-                        android:fontFamily="sans-serif-medium"
+                        android:fontFamily="@font/poppins_bold"
                         android:background="@drawable/bg_ghost_button"
                         android:stateListAnimator="@null" />
 
@@ -387,7 +387,7 @@
                         android:text="↓ Reverse"
                         android:textColor="@color/alive_white"
                         android:textSize="13sp"
-                        android:fontFamily="sans-serif-medium"
+                        android:fontFamily="@font/poppins_bold"
                         android:background="@drawable/bg_ghost_button"
                         android:stateListAnimator="@null" />
 
@@ -402,7 +402,7 @@
                 android:text="DANGER ZONE"
                 android:textColor="@color/alive_red"
                 android:textSize="10sp"
-                android:fontFamily="monospace"
+                android:fontFamily="@font/poppins_regular"
                 android:letterSpacing="0.22"
                 android:layout_marginBottom="16dp" />
 
@@ -422,7 +422,7 @@
                 android:text="Clear Cache"
                 android:textColor="@color/alive_white"
                 android:textSize="14sp"
-                android:fontFamily="sans-serif-medium"
+                android:fontFamily="@font/poppins_bold"
                 android:paddingStart="28dp"
                 android:paddingEnd="28dp"
                 android:background="@drawable/bg_ghost_button"
@@ -436,7 +436,7 @@
                 android:text="Reset Device"
                 android:textColor="@color/alive_white"
                 android:textSize="14sp"
-                android:fontFamily="sans-serif-medium"
+                android:fontFamily="@font/poppins_bold"
                 android:paddingStart="28dp"
                 android:paddingEnd="28dp"
                 android:background="@drawable/bg_red_button"

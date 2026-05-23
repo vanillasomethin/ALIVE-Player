@@ -149,7 +149,11 @@ class PlaybackEngine(private val context: Context) {
             plan.fallbackItems
         }
 
-        if (itemList.isEmpty()) return
+        if (itemList.isEmpty()) {
+            onWaiting?.invoke("No content for current time slot")
+            startRetryCountdown()
+            return
+        }
 
         val item = itemList[currentItemIndex % itemList.size]
         currentItemIndex = (currentItemIndex + 1) % itemList.size

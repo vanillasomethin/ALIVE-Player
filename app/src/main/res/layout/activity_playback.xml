@@ -53,7 +53,7 @@
                 android:textColor="#33ffffff"
                 android:textSize="16sp"
                 android:textStyle="bold"
-                android:fontFamily="sans-serif-medium"
+                android:fontFamily="@font/poppins_bold"
                 android:letterSpacing="-0.03" />
 
             <View
@@ -91,7 +91,7 @@
                 android:text="OFFLINE"
                 android:textColor="@color/alive_muted"
                 android:textSize="10sp"
-                android:fontFamily="monospace"
+                android:fontFamily="@font/poppins_regular"
                 android:letterSpacing="0.15" />
 
         </LinearLayout>
@@ -119,7 +119,7 @@
                     android:textColor="@color/alive_white"
                     android:textSize="64sp"
                     android:textStyle="bold"
-                    android:fontFamily="sans-serif-medium"
+                    android:fontFamily="@font/poppins_bold"
                     android:letterSpacing="-0.04" />
 
                 <View
@@ -168,7 +168,7 @@
                     android:text="Waiting for content…"
                     android:textColor="@color/alive_white"
                     android:textSize="14sp"
-                    android:fontFamily="monospace"
+                    android:fontFamily="@font/poppins_regular"
                     android:letterSpacing="0.04"
                     android:gravity="center"
                     android:layout_marginBottom="6dp" />
@@ -181,7 +181,7 @@
                     android:text=""
                     android:textColor="@color/alive_muted"
                     android:textSize="11sp"
-                    android:fontFamily="monospace"
+                    android:fontFamily="@font/poppins_regular"
                     android:gravity="center"
                     android:layout_marginBottom="16dp"
                     android:visibility="gone" />
@@ -204,7 +204,7 @@
                     android:text="Retry Now"
                     android:textColor="@color/alive_white"
                     android:textSize="13sp"
-                    android:fontFamily="sans-serif-medium"
+                    android:fontFamily="@font/poppins_bold"
                     android:background="@drawable/bg_ghost_button"
                     android:stateListAnimator="@null"
                     android:paddingStart="24dp"
@@ -282,7 +282,7 @@
             android:text="↓  New content available — updating schedule"
             android:textColor="@color/alive_white"
             android:textSize="12sp"
-            android:fontFamily="monospace"
+            android:fontFamily="@font/poppins_regular"
             android:letterSpacing="0.06" />
 
     </LinearLayout>
@@ -307,7 +307,7 @@
             android:text="↓ 0 / 0"
             android:textColor="@color/alive_white"
             android:textSize="11sp"
-            android:fontFamily="monospace"
+            android:fontFamily="@font/poppins_regular"
             android:layout_marginBottom="6dp" />
 
         <ProgressBar
@@ -330,7 +330,7 @@
         android:text="● OFFLINE"
         android:textColor="@color/alive_white"
         android:textSize="10sp"
-        android:fontFamily="monospace"
+        android:fontFamily="@font/poppins_regular"
         android:letterSpacing="0.1"
         android:background="@drawable/bg_red_button"
         android:paddingStart="10dp"
@@ -365,7 +365,7 @@
                 android:text="DIAGNOSTICS"
                 android:textColor="@color/alive_red"
                 android:textSize="10sp"
-                android:fontFamily="monospace"
+                android:fontFamily="@font/poppins_regular"
                 android:letterSpacing="0.22"
                 android:layout_marginBottom="20dp" />
 
@@ -441,7 +441,7 @@
                 android:text="Tap anywhere outside to close"
                 android:textColor="@color/alive_muted"
                 android:textSize="11sp"
-                android:fontFamily="monospace" />
+                android:fontFamily="@font/poppins_regular" />
 
         </LinearLayout>
 
