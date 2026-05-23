@@ -76,6 +76,7 @@ android {
                 "proguard-rules.pro",
             )
             buildConfigField("Boolean", "DEMO_MODE", "false")
+            ndk { debugSymbolLevel = "SYMBOL_TABLE" }
         }
     }
 
