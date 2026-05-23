@@ -38,6 +38,7 @@ import com.alive.player.service.PlaybackForegroundService
 import com.alive.player.settings.DevicePrefs
 import com.alive.player.settings.FetchStatus
 import com.alive.player.settings.SettingsActivity
+import com.alive.player.worker.InAppUpdateHelper
 import com.alive.player.worker.PlanFetchScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -435,6 +436,18 @@ class PlaybackActivity : Activity() {
                     or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
             )
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        InAppUpdateHelper.checkForUpdate(this)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == InAppUpdateHelper.REQUEST_CODE && resultCode != RESULT_OK) {
+            // Update was cancelled or failed — Play will retry on next resume
+        }
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     override fun onDestroy() {

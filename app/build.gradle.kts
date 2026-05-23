@@ -76,6 +76,7 @@ android {
                 "proguard-rules.pro",
             )
             buildConfigField("Boolean", "DEMO_MODE", "false")
+            ndk { debugSymbolLevel = "SYMBOL_TABLE" }
         }
     }
 
@@ -105,6 +106,8 @@ play {
 }
 
 dependencies {
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
+
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
