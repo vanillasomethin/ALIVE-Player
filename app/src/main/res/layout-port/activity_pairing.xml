@@ -49,7 +49,7 @@
             android:text="DEMO"
             android:textColor="@color/alive_white"
             android:textSize="10sp"
-            android:fontFamily="monospace"
+            android:fontFamily="@font/poppins_regular"
             android:letterSpacing="0.15"
             android:background="@drawable/bg_red_button"
             android:paddingStart="8dp"
@@ -67,7 +67,7 @@
         android:text="DEVICE SETUP"
         android:textColor="@color/alive_red"
         android:textSize="10sp"
-        android:fontFamily="monospace"
+        android:fontFamily="@font/poppins_regular"
         android:letterSpacing="0.22"
         android:layout_marginBottom="12dp" />
 
@@ -116,7 +116,7 @@
                 android:text="DEVICE NAME"
                 android:textColor="@color/alive_muted"
                 android:textSize="10sp"
-                android:fontFamily="monospace"
+                android:fontFamily="@font/poppins_regular"
                 android:letterSpacing="0.22"
                 android:layout_marginBottom="10dp" />
 
@@ -128,7 +128,7 @@
                 android:textColor="@color/alive_white"
                 android:textColorHint="@color/alive_muted"
                 android:textSize="15sp"
-                android:fontFamily="monospace"
+                android:fontFamily="@font/poppins_regular"
                 android:background="@null"
                 android:inputType="text"
                 android:imeOptions="actionDone"
@@ -147,7 +147,7 @@
                 android:text="HARDWARE KEY"
                 android:textColor="@color/alive_muted"
                 android:textSize="10sp"
-                android:fontFamily="monospace"
+                android:fontFamily="@font/poppins_regular"
                 android:letterSpacing="0.22"
                 android:layout_marginBottom="8dp" />
 
@@ -159,7 +159,7 @@
                 android:textColor="@color/alive_white"
                 android:textSize="16sp"
                 android:textStyle="bold"
-                android:fontFamily="monospace"
+                android:fontFamily="@font/poppins_regular"
                 android:letterSpacing="0.08"
                 android:layout_marginBottom="16dp" />
 
@@ -191,7 +191,7 @@
                         android:text="Open in Admin"
                         android:textColor="@color/alive_muted"
                         android:textSize="9sp"
-                        android:fontFamily="monospace"
+                        android:fontFamily="@font/poppins_regular"
                         android:letterSpacing="0.1" />
 
                 </LinearLayout>
@@ -223,7 +223,7 @@
                         android:text="Hardware Key"
                         android:textColor="@color/alive_muted"
                         android:textSize="9sp"
-                        android:fontFamily="monospace"
+                        android:fontFamily="@font/poppins_regular"
                         android:letterSpacing="0.1" />
 
                 </LinearLayout>
@@ -237,7 +237,7 @@
                 android:text="Register Device"
                 android:textColor="@color/alive_white"
                 android:textSize="14sp"
-                android:fontFamily="sans-serif-medium"
+                android:fontFamily="@font/poppins_bold"
                 android:background="@drawable/bg_red_button"
                 android:stateListAnimator="@null" />
 
@@ -258,7 +258,7 @@
                 android:text="REGISTERED"
                 android:textColor="@color/alive_red"
                 android:textSize="10sp"
-                android:fontFamily="monospace"
+                android:fontFamily="@font/poppins_regular"
                 android:letterSpacing="0.22"
                 android:layout_marginBottom="16dp" />
 
@@ -269,7 +269,7 @@
                 android:textColor="@color/alive_white"
                 android:textSize="20sp"
                 android:textStyle="bold"
-                android:fontFamily="sans-serif-medium"
+                android:fontFamily="@font/poppins_bold"
                 android:gravity="center"
                 android:layout_marginBottom="20dp" />
 
@@ -285,7 +285,7 @@
                 android:text="DEVICE ID — verify in admin"
                 android:textColor="@color/alive_muted"
                 android:textSize="10sp"
-                android:fontFamily="monospace"
+                android:fontFamily="@font/poppins_regular"
                 android:letterSpacing="0.18"
                 android:gravity="center"
                 android:layout_marginBottom="10dp" />
@@ -297,7 +297,7 @@
                 android:textColor="@color/alive_white"
                 android:textSize="22sp"
                 android:textStyle="bold"
-                android:fontFamily="monospace"
+                android:fontFamily="@font/poppins_regular"
                 android:letterSpacing="0.1"
                 android:gravity="center"
                 android:layout_marginBottom="8dp" />
@@ -320,7 +320,7 @@
             android:text="Retry"
             android:textColor="@color/alive_white"
             android:textSize="14sp"
-            android:fontFamily="sans-serif-medium"
+            android:fontFamily="@font/poppins_bold"
             android:background="@drawable/bg_ghost_button"
             android:stateListAnimator="@null"
             android:visibility="gone" />
@@ -350,7 +350,7 @@
             android:text=""
             android:textColor="@color/alive_muted"
             android:textSize="13sp"
-            android:fontFamily="monospace" />
+            android:fontFamily="@font/poppins_regular" />
 
     </LinearLayout>
 

@@ -127,6 +127,9 @@ class PlaybackActivity : Activity() {
                         downloadCornerBar.progress = done
                     } else {
                         downloadCorner.visibility = View.GONE
+                        if (waitingOverlay.visibility == View.VISIBLE) {
+                            engine?.startLoop()
+                        }
                     }
                 }
             }
