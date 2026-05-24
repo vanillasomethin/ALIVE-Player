@@ -1,2 +1,2 @@
-package_name "com.alive.player"
+package_name "com.partner.alive"
 json_key_file ENV["PLAY_SERVICE_ACCOUNT_JSON"] || "play-service-account.json"
