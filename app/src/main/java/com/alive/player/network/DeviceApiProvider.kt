@@ -9,15 +9,36 @@ import java.nio.charset.StandardCharsets
 class DeviceApiProvider(
     private val baseUrl: String = com.alive.player.BuildConfig.API_BASE_URL,
 ) {
-    /** Single-call device self-registration. Returns JWT immediately. */
+    /** Device self-registration. Returns JWT + 6-char pairing code to display on screen. */
     fun claimDevice(hardwareKey: String, name: String? = null): ClaimDeviceResponse {
         val payload = JSONObject().put("hardwareKey", hardwareKey)
         if (name != null) payload.put("name", name)
         val resp = postJson("/api/device/claim", payload, null)
         return ClaimDeviceResponse(
-            deviceId = resp.getString("deviceId"),
-            token = resp.getString("token"),
+            deviceId    = resp.getString("deviceId"),
+            token       = resp.getString("token"),
+            pairingCode = resp.optString("pairingCode", ""),
         )
+    }
+
+    /** Poll until admin confirms the device. Returns true when pairedAt is set. */
+    fun checkPairingStatus(deviceToken: String): Boolean {
+        val resp = getJson("/api/device/pairing-status", deviceToken)
+        return resp.optBoolean("paired", false)
+    }
+
+    private fun getJson(path: String, token: String?): JSONObject {
+        val url = URL(baseUrl + path)
+        val conn = url.openConnection() as HttpURLConnection
+        conn.requestMethod = "GET"
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 30_000
+        if (!token.isNullOrBlank()) conn.setRequestProperty("Authorization", "Bearer $token")
+        val code = conn.responseCode
+        val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+            ?.bufferedReader()?.readText().orEmpty()
+        if (code !in 200..299) throw IllegalStateException("GET $path failed ($code): $body")
+        return if (body.isBlank()) JSONObject() else JSONObject(body)
     }
 
     /** Fetch the active schedule for the device. lastPlanHash is stored locally to skip re-processing. */

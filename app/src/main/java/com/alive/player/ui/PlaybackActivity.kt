@@ -113,20 +113,46 @@ class PlaybackActivity : Activity() {
         }
     }
 
+    // Track bytes between download polls to calculate speed
+    private var lastPollBytesMs  = 0L
+    private var lastPollBytes    = 0L
+
     // Download corner polling
     private val downloadPollRunnable = object : Runnable {
         override fun run() {
             CoroutineScope(Dispatchers.IO).launch {
-                val dao   = AppDatabase.get(applicationContext).downloadJobDao()
-                val done  = dao.doneCount()
-                val total = dao.totalCount()
+                val dao        = AppDatabase.get(applicationContext).downloadJobDao()
+                val done       = dao.doneCount()
+                val total      = dao.totalCount()
+                val doneBytes  = dao.doneBytesSum()
+                val totalBytes = dao.totalBytesSum()
                 withContext(Dispatchers.Main) {
                     if (total > 0 && done < total) {
+                        val pct       = if (total > 0) done * 100 / total else 0
+                        val nowMs     = System.currentTimeMillis()
+                        val speedKBps = if (lastPollBytesMs > 0 && nowMs > lastPollBytesMs) {
+                            ((doneBytes - lastPollBytes) * 1000L / (nowMs - lastPollBytesMs) / 1024L)
+                                .coerceAtLeast(0L)
+                        } else 0L
+                        lastPollBytesMs = nowMs
+                        lastPollBytes   = doneBytes
+
+                        val speedStr = if (speedKBps >= 1024) "${speedKBps / 1024} MB/s"
+                                       else if (speedKBps > 0) "$speedKBps KB/s"
+                                       else ""
+                        val sizeStr  = if (totalBytes > 0) {
+                            val doneMb  = doneBytes / 1024 / 1024
+                            val totalMb = totalBytes / 1024 / 1024
+                            " · ${doneMb}/${totalMb} MB"
+                        } else ""
+
                         downloadCorner.visibility = View.VISIBLE
-                        downloadCornerText.text = "↓ $done / $total"
-                        downloadCornerBar.max = total
+                        downloadCornerText.text   = "↓ $done/$total ($pct%)$sizeStr${if (speedStr.isNotEmpty()) " · $speedStr" else ""}"
+                        downloadCornerBar.max     = total
                         downloadCornerBar.progress = done
                     } else {
+                        lastPollBytesMs = 0L
+                        lastPollBytes   = 0L
                         downloadCorner.visibility = View.GONE
                         if (waitingOverlay.visibility == View.VISIBLE) {
                             engine?.startLoop()
@@ -310,15 +336,23 @@ class PlaybackActivity : Activity() {
             }
             FetchStatus.OK.name, FetchStatus.NO_CONTENT.name -> {
                 CoroutineScope(Dispatchers.IO).launch {
-                    val dao   = AppDatabase.get(applicationContext).downloadJobDao()
-                    val done  = dao.doneCount()
-                    val total = dao.totalCount()
+                    val dao        = AppDatabase.get(applicationContext).downloadJobDao()
+                    val done       = dao.doneCount()
+                    val total      = dao.totalCount()
+                    val doneBytes  = dao.doneBytesSum()
+                    val totalBytes = dao.totalBytesSum()
                     withContext(Dispatchers.Main) {
                         if (total > 0 && done < total) {
+                            val pct = if (total > 0) done * 100 / total else 0
+                            val sizeStr = if (totalBytes > 0) {
+                                val doneMb  = doneBytes / 1024 / 1024
+                                val totalMb = totalBytes / 1024 / 1024
+                                " · ${doneMb}/${totalMb} MB"
+                            } else ""
                             waitingProgress.visibility = View.GONE
                             statusIcon.apply { visibility = View.VISIBLE; text = "↓"; setTextColor(Color.parseColor("#60a5fa")) }
-                            waitingStatus.text = "Downloading content ($done / $total)"
-                            statusDetail.visibility = View.GONE
+                            waitingStatus.text = "Downloading $done of $total ($pct%)"
+                            showDetail("Please wait — content will play when ready$sizeStr")
                             downloadProgress.apply { visibility = View.VISIBLE; max = total; progress = done }
                             retryButton.visibility = View.GONE
                         } else {

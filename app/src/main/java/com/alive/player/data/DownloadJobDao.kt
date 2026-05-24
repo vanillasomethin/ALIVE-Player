@@ -27,4 +27,10 @@ interface DownloadJobDao {
 
     @Query("SELECT COUNT(*) FROM download_jobs")
     suspend fun totalCount(): Int
+
+    @Query("SELECT COALESCE(SUM(bytes_downloaded), 0) FROM download_jobs WHERE state = 'DONE'")
+    suspend fun doneBytesSum(): Long
+
+    @Query("SELECT COALESCE(SUM(size_bytes), 0) FROM download_jobs")
+    suspend fun totalBytesSum(): Long
 }

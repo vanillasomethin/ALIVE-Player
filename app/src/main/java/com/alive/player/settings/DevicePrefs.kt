@@ -20,18 +20,47 @@ class DevicePrefs(context: Context) {
     // Plain prefs for non-sensitive diagnostic state
     private val statusPrefs = context.getSharedPreferences(STATUS_PREFS_NAME, Context.MODE_PRIVATE)
 
+    /**
+     * Called after admin confirms the device via the pairing code.
+     * Sets paired_at so [isPaired] returns true and the device proceeds to playback.
+     */
     fun storePairing(token: String, deviceId: String) {
         prefs.edit()
             .putString(KEY_DEVICE_TOKEN, token)
             .putString(KEY_DEVICE_ID, deviceId)
             .putLong(KEY_PAIRED_AT, System.currentTimeMillis())
+            .remove(KEY_PAIRING_CODE)    // no longer needed once confirmed
+            .apply()
+    }
+
+    /**
+     * Called right after /api/device/claim when the device is not yet admin-confirmed.
+     * Stores token + pairingCode but does NOT set paired_at, so [isPaired] stays false.
+     */
+    fun storePairingPending(token: String, deviceId: String, pairingCode: String) {
+        prefs.edit()
+            .putString(KEY_DEVICE_TOKEN, token)
+            .putString(KEY_DEVICE_ID, deviceId)
+            .putString(KEY_PAIRING_CODE, pairingCode)
+            // KEY_PAIRED_AT intentionally not set
+            .apply()
+    }
+
+    /** Marks the device as admin-confirmed so [isPaired] returns true. */
+    fun confirmPairing() {
+        prefs.edit()
+            .putLong(KEY_PAIRED_AT, System.currentTimeMillis())
+            .remove(KEY_PAIRING_CODE)
             .apply()
     }
 
     fun getDeviceToken(): String? = prefs.getString(KEY_DEVICE_TOKEN, null)
     fun getDeviceId(): String? = prefs.getString(KEY_DEVICE_ID, null)
     fun getPairedAt(): Long? = prefs.getLong(KEY_PAIRED_AT, -1L).takeIf { it >= 0 }
-    fun isPaired(): Boolean = !getDeviceToken().isNullOrBlank()
+    fun getPairingCode(): String? = prefs.getString(KEY_PAIRING_CODE, null)
+
+    /** True only when device has a token AND has been confirmed by admin (paired_at is set). */
+    fun isPaired(): Boolean = !getDeviceToken().isNullOrBlank() && getPairedAt() != null
 
     fun setFetchStatus(status: FetchStatus) {
         statusPrefs.edit()
@@ -79,6 +108,7 @@ class DevicePrefs(context: Context) {
         private const val KEY_DEVICE_TOKEN    = "device_token"
         private const val KEY_DEVICE_ID       = "device_id"
         private const val KEY_PAIRED_AT       = "paired_at"
+        private const val KEY_PAIRING_CODE    = "pairing_code"
         private const val KEY_FETCH_STATUS    = "fetch_status"
         private const val KEY_FETCH_MESSAGE   = "fetch_message"
         private const val KEY_FETCH_TIME      = "fetch_time"

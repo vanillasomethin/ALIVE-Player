@@ -1,69 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- New pairing UI: device auto-claims on boot, shows a 6-char code, waits for admin to confirm -->
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/alive_ink"
     android:padding="48dp">
 
-    <!-- ── Top-left: alive● wordmark ──────────────────────── -->
+    <!-- Main content: two-column on landscape TV -->
     <LinearLayout
-        android:id="@+id/logo_row"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_alignParentStart="true"
-        android:layout_alignParentTop="true"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="alive"
-            android:textColor="@color/alive_white"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            android:fontFamily="@font/poppins_bold"
-            android:letterSpacing="-0.03" />
-
-        <View
-            android:layout_width="9dp"
-            android:layout_height="9dp"
-            android:layout_marginStart="3dp"
-            android:layout_marginBottom="2dp"
-            android:background="@drawable/shape_dot_red"
-            android:layout_gravity="center_vertical" />
-
-    </LinearLayout>
-
-    <!-- ── Top-right: demo badge ─────────────────────────── -->
-    <TextView
-        android:id="@+id/demo_badge"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_alignParentTop="true"
-        android:layout_alignParentEnd="true"
-        android:text="DEMO"
-        android:textColor="@color/alive_white"
-        android:textSize="10sp"
-        android:fontFamily="@font/poppins_regular"
-        android:letterSpacing="0.15"
-        android:background="@drawable/bg_red_button"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp"
-        android:paddingTop="3dp"
-        android:paddingBottom="3dp"
-        android:visibility="gone" />
-
-    <!-- ── Main content: left brand + right device card ──── -->
-    <LinearLayout
-        android:id="@+id/content_row"
+        android:id="@+id/main_content"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_centerInParent="true"
+        android:layout_centerVertical="true"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
-        <!-- Left: brand headline + instructions (55%) -->
+        <!-- Left: brand + instructions -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -71,15 +23,60 @@
             android:orientation="vertical"
             android:paddingEnd="48dp">
 
+            <!-- alive● logo -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="32dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="alive"
+                    android:textColor="@color/alive_white"
+                    android:textSize="22sp"
+                    android:textStyle="bold"
+                    android:fontFamily="@font/poppins_bold"
+                    android:letterSpacing="-0.03" />
+
+                <View
+                    android:layout_width="9dp"
+                    android:layout_height="9dp"
+                    android:layout_marginStart="3dp"
+                    android:layout_marginBottom="2dp"
+                    android:background="@drawable/shape_dot_red"
+                    android:layout_gravity="center_vertical" />
+
+                <TextView
+                    android:id="@+id/demo_badge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="DEMO"
+                    android:textColor="@color/alive_white"
+                    android:textSize="10sp"
+                    android:fontFamily="@font/poppins_regular"
+                    android:letterSpacing="0.15"
+                    android:background="@drawable/bg_red_button"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="3dp"
+                    android:paddingBottom="3dp"
+                    android:layout_marginStart="12dp"
+                    android:visibility="gone" />
+
+            </LinearLayout>
+
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="DEVICE SETUP"
+                android:text="SCREEN SETUP"
                 android:textColor="@color/alive_red"
                 android:textSize="10sp"
                 android:fontFamily="@font/poppins_regular"
                 android:letterSpacing="0.22"
-                android:layout_marginBottom="20dp" />
+                android:layout_marginBottom="12dp" />
 
             <TextView
                 android:id="@+id/pairing_headline"
@@ -87,176 +84,146 @@
                 android:layout_height="wrap_content"
                 android:text="Seen.\nRemembered.\nBought."
                 android:textColor="@color/alive_white"
-                android:textSize="44sp"
+                android:textSize="38sp"
                 android:textStyle="bold"
                 android:fontFamily="@font/poppins_bold"
                 android:letterSpacing="-0.03"
                 android:lineSpacingMultiplier="1.1"
-                android:layout_marginBottom="28dp" />
+                android:layout_marginBottom="20dp" />
 
-            <TextView
+            <!-- Step instructions -->
+            <LinearLayout
+                android:id="@+id/steps_view"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Name this screen, then tap Register. The device ID will appear in your admin dashboard so you can verify and assign a schedule."
-                android:textColor="@color/alive_muted"
-                android:textSize="15sp"
-                android:lineSpacingMultiplier="1.5" />
+                android:orientation="vertical"
+                android:visibility="visible">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="12dp">
+
+                    <TextView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:text="1"
+                        android:textColor="@color/alive_white"
+                        android:textSize="11sp"
+                        android:fontFamily="@font/poppins_bold"
+                        android:gravity="center"
+                        android:background="@drawable/bg_red_button"
+                        android:layout_marginEnd="12dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Note the screen code shown on the right"
+                        android:textColor="@color/alive_white"
+                        android:textSize="14sp"
+                        android:fontFamily="@font/poppins_regular" />
+
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="12dp">
+
+                    <TextView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:text="2"
+                        android:textColor="@color/alive_white"
+                        android:textSize="11sp"
+                        android:fontFamily="@font/poppins_bold"
+                        android:gravity="center"
+                        android:background="@drawable/bg_step_bubble"
+                        android:layout_marginEnd="12dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Open wearealive.in/admin on your phone"
+                        android:textColor="@color/alive_muted"
+                        android:textSize="14sp"
+                        android:fontFamily="@font/poppins_regular" />
+
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:text="3"
+                        android:textColor="@color/alive_white"
+                        android:textSize="11sp"
+                        android:fontFamily="@font/poppins_bold"
+                        android:gravity="center"
+                        android:background="@drawable/bg_step_bubble"
+                        android:layout_marginEnd="12dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text='Tap "Pair screen" and enter the code'
+                        android:textColor="@color/alive_muted"
+                        android:textSize="14sp"
+                        android:fontFamily="@font/poppins_regular" />
+
+                </LinearLayout>
+
+            </LinearLayout>
 
         </LinearLayout>
 
-        <!-- Right: device card (45%) -->
+        <!-- Right: code card -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="45"
             android:orientation="vertical"
             android:background="@drawable/bg_code_card"
-            android:padding="36dp">
+            android:padding="36dp"
+            android:gravity="center_horizontal">
 
-            <!-- ── STEP 1: Name + Register (shown before claim) ── -->
+            <!-- Loading state (before claim completes) -->
             <LinearLayout
-                android:id="@+id/card_step_register"
+                android:id="@+id/card_loading"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
+                android:gravity="center_horizontal"
                 android:visibility="visible">
 
+                <ProgressBar
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:indeterminateTint="@color/alive_red"
+                    android:layout_marginBottom="16dp" />
+
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="DEVICE NAME"
+                    android:text="Connecting…"
                     android:textColor="@color/alive_muted"
-                    android:textSize="10sp"
-                    android:fontFamily="@font/poppins_regular"
-                    android:letterSpacing="0.22"
-                    android:layout_marginBottom="10dp" />
-
-                <EditText
-                    android:id="@+id/device_name_input"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:hint="e.g. Lobby TV, Floor 2"
-                    android:textColor="@color/alive_white"
-                    android:textColorHint="@color/alive_muted"
-                    android:textSize="15sp"
-                    android:fontFamily="@font/poppins_regular"
-                    android:background="@null"
-                    android:inputType="text"
-                    android:imeOptions="actionDone"
-                    android:paddingStart="0dp"
-                    android:layout_marginBottom="8dp" />
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:background="@color/code_card_border"
-                    android:layout_marginBottom="20dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="HARDWARE KEY"
-                    android:textColor="@color/alive_muted"
-                    android:textSize="10sp"
-                    android:fontFamily="@font/poppins_regular"
-                    android:letterSpacing="0.22"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:id="@+id/claim_code_value"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Loading…"
-                    android:textColor="@color/alive_white"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:fontFamily="@font/poppins_regular"
-                    android:letterSpacing="0.08"
-                    android:layout_marginBottom="20dp" />
-
-                <!-- QR codes: admin URL + raw hardware key -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center"
-                    android:layout_marginBottom="20dp">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:gravity="center_horizontal">
-
-                        <ImageView
-                            android:id="@+id/qr_admin_image"
-                            android:layout_width="120dp"
-                            android:layout_height="120dp"
-                            android:scaleType="fitXY"
-                            android:layout_marginBottom="6dp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Open in Admin"
-                            android:textColor="@color/alive_muted"
-                            android:textSize="9sp"
-                            android:fontFamily="@font/poppins_regular"
-                            android:letterSpacing="0.1" />
-
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="1dp"
-                        android:layout_height="match_parent"
-                        android:background="@color/code_card_border"
-                        android:layout_marginStart="8dp"
-                        android:layout_marginEnd="8dp" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:gravity="center_horizontal">
-
-                        <ImageView
-                            android:id="@+id/qr_key_image"
-                            android:layout_width="120dp"
-                            android:layout_height="120dp"
-                            android:scaleType="fitXY"
-                            android:layout_marginBottom="6dp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Hardware Key"
-                            android:textColor="@color/alive_muted"
-                            android:textSize="9sp"
-                            android:fontFamily="@font/poppins_regular"
-                            android:letterSpacing="0.1" />
-
-                    </LinearLayout>
-
-                </LinearLayout>
-
-                <Button
-                    android:id="@+id/register_button"
-                    android:layout_width="match_parent"
-                    android:layout_height="52dp"
-                    android:text="Register Device"
-                    android:textColor="@color/alive_white"
-                    android:textSize="14sp"
-                    android:fontFamily="@font/poppins_bold"
-                    android:background="@drawable/bg_red_button"
-                    android:stateListAnimator="@null" />
+                    android:textSize="13sp"
+                    android:fontFamily="@font/poppins_regular" />
 
             </LinearLayout>
 
-            <!-- ── STEP 2: Success confirmation (shown after claim) ── -->
+            <!-- Code display state (after claim, waiting for admin) -->
             <LinearLayout
-                android:id="@+id/card_step_success"
+                android:id="@+id/card_code"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
@@ -266,23 +233,34 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="REGISTERED"
-                    android:textColor="@color/alive_red"
+                    android:text="YOUR SCREEN CODE"
+                    android:textColor="@color/alive_muted"
                     android:textSize="10sp"
                     android:fontFamily="@font/poppins_regular"
                     android:letterSpacing="0.22"
-                    android:layout_marginBottom="16dp" />
+                    android:layout_marginBottom="12dp" />
 
                 <TextView
-                    android:id="@+id/success_device_name"
+                    android:id="@+id/pairing_code_value"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:text="——"
                     android:textColor="@color/alive_white"
-                    android:textSize="20sp"
+                    android:textSize="52sp"
                     android:textStyle="bold"
                     android:fontFamily="@font/poppins_bold"
+                    android:letterSpacing="0.15"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Enter this code in admin → Pair screen"
+                    android:textColor="@color/alive_muted"
+                    android:textSize="12sp"
+                    android:fontFamily="@font/poppins_regular"
                     android:gravity="center"
-                    android:layout_marginBottom="20dp" />
+                    android:layout_marginBottom="28dp" />
 
                 <View
                     android:layout_width="match_parent"
@@ -290,82 +268,119 @@
                     android:background="@color/code_card_border"
                     android:layout_marginBottom="20dp" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="DEVICE ID — verify in admin"
-                    android:textColor="@color/alive_muted"
-                    android:textSize="10sp"
-                    android:fontFamily="@font/poppins_regular"
-                    android:letterSpacing="0.18"
-                    android:gravity="center"
-                    android:layout_marginBottom="10dp" />
+                <ProgressBar
+                    android:id="@+id/waiting_spinner"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:indeterminateTint="@color/alive_red"
+                    android:layout_marginBottom="8dp" />
 
                 <TextView
-                    android:id="@+id/success_device_id"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="@color/alive_white"
-                    android:textSize="26sp"
-                    android:textStyle="bold"
+                    android:text="Waiting for admin…"
+                    android:textColor="@color/alive_muted"
+                    android:textSize="12sp"
                     android:fontFamily="@font/poppins_regular"
-                    android:letterSpacing="0.1"
+                    android:gravity="center" />
+
+            </LinearLayout>
+
+            <!-- Success state -->
+            <LinearLayout
+                android:id="@+id/card_success"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="✓"
+                    android:textColor="@color/alive_green"
+                    android:textSize="48sp"
+                    android:gravity="center"
+                    android:layout_marginBottom="12dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Screen confirmed!"
+                    android:textColor="@color/alive_white"
+                    android:textSize="18sp"
+                    android:fontFamily="@font/poppins_bold"
                     android:gravity="center"
                     android:layout_marginBottom="8dp" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Match this ID in wearealive.in/admin to confirm"
+                    android:text="Starting playback…"
                     android:textColor="@color/alive_muted"
-                    android:textSize="11sp"
-                    android:gravity="center"
-                    android:lineSpacingMultiplier="1.4" />
+                    android:textSize="13sp"
+                    android:fontFamily="@font/poppins_regular"
+                    android:gravity="center" />
 
             </LinearLayout>
 
-            <!-- ── Error: retry button (shown on failure) ── -->
-            <Button
-                android:id="@+id/claim_refresh_button"
+            <!-- Error state -->
+            <LinearLayout
+                android:id="@+id/card_error"
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:text="Retry"
-                android:textColor="@color/alive_white"
-                android:textSize="14sp"
-                android:fontFamily="@font/poppins_bold"
-                android:background="@drawable/bg_ghost_button"
-                android:stateListAnimator="@null"
-                android:visibility="gone" />
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Connection failed"
+                    android:textColor="@color/alive_red"
+                    android:textSize="15sp"
+                    android:fontFamily="@font/poppins_bold"
+                    android:gravity="center"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
+                    android:id="@+id/error_message"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/alive_muted"
+                    android:textSize="12sp"
+                    android:fontFamily="@font/poppins_regular"
+                    android:gravity="center"
+                    android:layout_marginBottom="20dp" />
+
+                <Button
+                    android:id="@+id/retry_button"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="Retry"
+                    android:textColor="@color/alive_white"
+                    android:textSize="14sp"
+                    android:fontFamily="@font/poppins_bold"
+                    android:background="@drawable/bg_red_button"
+                    android:stateListAnimator="@null" />
+
+            </LinearLayout>
 
         </LinearLayout>
 
     </LinearLayout>
 
-    <!-- ── Bottom: progress + status ─────────────────────── -->
-    <LinearLayout
-        android:layout_width="match_parent"
+    <!-- Bottom status bar -->
+    <TextView
+        android:id="@+id/pairing_status"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_alignParentBottom="true"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <ProgressBar
-            android:id="@+id/claim_progress"
-            android:layout_width="20dp"
-            android:layout_height="20dp"
-            android:layout_marginEnd="12dp"
-            android:indeterminateTint="@color/alive_red"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/pairing_status"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text=""
-            android:textColor="@color/alive_muted"
-            android:textSize="13sp"
-            android:fontFamily="@font/poppins_regular" />
-
-    </LinearLayout>
+        android:layout_alignParentStart="true"
+        android:text=""
+        android:textColor="@color/alive_muted"
+        android:textSize="12sp"
+        android:fontFamily="@font/poppins_regular" />
 
 </RelativeLayout>
