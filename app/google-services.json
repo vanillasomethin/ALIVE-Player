@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:780681503687:android:971ca1c1cc0bcb62d2afe2",
         "android_client_info": {
-          "package_name": "com.alive.player"
+          "package_name": "in.wearealive.player"
         }
       },
       "oauth_client": [],
