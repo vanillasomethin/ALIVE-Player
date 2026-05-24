@@ -19,7 +19,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.alive.player"
+        applicationId = "in.wearealive.player"
         minSdk = 26
         targetSdk = 35
         versionCode = (System.getenv("BUILD_NUMBER") ?: "1").toInt()
