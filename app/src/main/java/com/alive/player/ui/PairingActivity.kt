@@ -2,23 +2,18 @@ package com.alive.player.ui
 
 import android.app.Activity
 import android.content.Intent
-import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.view.View
-import android.view.inputmethod.EditorInfo
 import android.widget.Button
-import android.widget.EditText
-import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.TextView
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.MultiFormatWriter
 import com.alive.player.BuildConfig
 import com.alive.player.R
 import com.alive.player.data.AppDatabase
@@ -35,30 +30,49 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
 class PairingActivity : Activity() {
-    private val executor = Executors.newSingleThreadExecutor()
+
+    private val executor   = Executors.newSingleThreadExecutor()
+    private val uiHandler  = Handler(Looper.getMainLooper())
+    private var polling    = false
+
+    // Poll every 5s while waiting for admin confirmation
+    private val pollRunnable = object : Runnable {
+        override fun run() {
+            if (!polling) return
+            val prefs = DevicePrefs(this@PairingActivity)
+            val token = prefs.getDeviceToken() ?: return
+            executor.execute {
+                try {
+                    val paired = DeviceApiProvider().checkPairingStatus(token)
+                    if (paired) {
+                        prefs.confirmPairing()
+                        HeartbeatScheduler.schedule(applicationContext)
+                        PlanFetchScheduler.schedule(applicationContext)
+                        UpdateScheduler.schedule(applicationContext)
+                        runOnUiThread { showSuccess() }
+                    } else {
+                        uiHandler.postDelayed(this, POLL_INTERVAL_MS)
+                    }
+                } catch (_: Exception) {
+                    // Network error during poll — retry later
+                    uiHandler.postDelayed(this, POLL_INTERVAL_MS)
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         applyOrientationPref()
-        // Check before inflating to avoid a flash of the pairing UI
+
+        // Already fully paired — go straight to playback
         if (DevicePrefs(this).isPaired()) {
             startPlayback()
             return
         }
 
         setContentView(R.layout.activity_pairing)
-
-        val stepRegister = findViewById<LinearLayout>(R.id.card_step_register)
-        val stepSuccess  = findViewById<LinearLayout>(R.id.card_step_success)
-        val hwKeyView    = findViewById<TextView>(R.id.claim_code_value)
-        val nameInput    = findViewById<EditText>(R.id.device_name_input)
-        val registerBtn  = findViewById<Button>(R.id.register_button)
-        val retryBtn     = findViewById<Button>(R.id.claim_refresh_button)
-        val progress     = findViewById<ProgressBar>(R.id.claim_progress)
-        val statusBar    = findViewById<TextView>(R.id.pairing_status)
-        val successName  = findViewById<TextView>(R.id.success_device_name)
-        val successId    = findViewById<TextView>(R.id.success_device_id)
 
         // "Seen." in brand red
         val headline = SpannableStringBuilder("Seen.\nRemembered.\nBought.")
@@ -74,137 +88,121 @@ class PairingActivity : Activity() {
         }
 
         val prefs = DevicePrefs(this)
-        val hardwareKey = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
-            ?: "unknown-device"
-        hwKeyView.text = hardwareKey.chunked(4).joinToString("-").uppercase()
 
-        val qrSizePx = (120 * resources.displayMetrics.density).toInt()
-        val adminUrl = "https://wearealive.in/admin/devices/claim?hardwareKey=$hardwareKey"
-        executor.execute {
-            val qrAdmin = makeQr(adminUrl, qrSizePx)
-            val qrKey   = makeQr(hardwareKey, qrSizePx)
-            runOnUiThread {
-                findViewById<ImageView>(R.id.qr_admin_image).setImageBitmap(qrAdmin)
-                findViewById<ImageView>(R.id.qr_key_image).setImageBitmap(qrKey)
-            }
+        // If already claimed but not yet confirmed by admin, resume showing the code
+        val existingToken = prefs.getDeviceToken()
+        val existingCode  = prefs.getPairingCode()
+        if (existingToken != null && existingCode != null) {
+            showCode(existingCode)
+            startPolling()
+            return
         }
 
-        fun doRegister() {
-            val name = nameInput.text.toString().trim().ifBlank { null }
-            registerBtn.isEnabled = false
-            retryBtn.visibility = View.GONE
-            statusBar.text = ""
-            attemptClaim(
-                hardwareKey, name,
-                stepRegister, stepSuccess,
-                successName, successId,
-                registerBtn, retryBtn,
-                progress, statusBar, prefs,
-            )
-        }
-
-        registerBtn.setOnClickListener { doRegister() }
-        nameInput.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_DONE) { doRegister(); true } else false
-        }
-
-        retryBtn.setOnClickListener {
-            stepRegister.visibility = View.VISIBLE
-            stepSuccess.visibility = View.GONE
-            retryBtn.visibility = View.GONE
-            registerBtn.isEnabled = true
-        }
+        // First boot — auto-claim
+        autoClaim(prefs)
     }
 
-    private fun attemptClaim(
-        hardwareKey: String,
-        name: String?,
-        stepRegister: LinearLayout,
-        stepSuccess: LinearLayout,
-        successName: TextView,
-        successId: TextView,
-        registerBtn: Button,
-        retryBtn: Button,
-        progress: ProgressBar,
-        statusBar: TextView,
-        prefs: DevicePrefs,
-    ) {
-        progress.visibility = View.VISIBLE
-        statusBar.text = if (BuildConfig.DEMO_MODE) "Demo mode — connecting…" else "Connecting…"
+    private fun autoClaim(prefs: DevicePrefs) {
+        showLoading()
+        val hardwareKey = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+            ?: "unknown-device"
 
         executor.execute {
             try {
                 val response = if (BuildConfig.DEMO_MODE) {
                     DemoApiProvider.claimDevice(hardwareKey)
                 } else {
-                    DeviceApiProvider().claimDevice(hardwareKey, name)
+                    DeviceApiProvider().claimDevice(hardwareKey)
                 }
 
-                prefs.storePairing(response.token, response.deviceId)
-
-                // Upload FCM token if Firebase already assigned one before pairing completed.
-                val fcmToken = prefs.getFcmToken()
-                if (fcmToken != null && !BuildConfig.DEMO_MODE) {
-                    try { DeviceApiProvider().updateFcmToken(response.token, fcmToken) } catch (_: Exception) {}
-                }
-
-                if (BuildConfig.DEMO_MODE) {
-                    CoroutineScope(Dispatchers.IO).launch {
-                        AppDatabase.get(applicationContext).planCacheDao().upsert(
-                            PlanCache(
-                                id = 1,
-                                planJson = DemoApiProvider.demoScheduleJson(),
-                                etag = null,
-                                fetchedAtEpochMs = System.currentTimeMillis(),
-                            )
-                        )
-                    }
-                } else {
-                    HeartbeatScheduler.schedule(applicationContext)
-                    PlanFetchScheduler.schedule(applicationContext)
-                    UpdateScheduler.schedule(applicationContext)
-                }
-
-                val friendlyId  = response.deviceId.take(12).uppercase()
-                val displayName = name ?: "This Device"
-
-                runOnUiThread {
-                    progress.visibility = View.GONE
-                    statusBar.text = ""
-                    stepRegister.visibility = View.GONE
-                    stepSuccess.visibility = View.VISIBLE
-                    successName.text = displayName
-                    successId.text = friendlyId
-
+                if (BuildConfig.DEMO_MODE || response.pairingCode.isEmpty()) {
+                    // Demo mode or device already admin-confirmed (e.g. reinstall on existing device)
+                    prefs.storePairing(response.token, response.deviceId)
                     if (BuildConfig.DEMO_MODE) {
-                        startPlayback()
+                        CoroutineScope(Dispatchers.IO).launch {
+                            AppDatabase.get(applicationContext).planCacheDao().upsert(
+                                PlanCache(
+                                    id = 1,
+                                    planJson = DemoApiProvider.demoScheduleJson(),
+                                    etag = null,
+                                    fetchedAtEpochMs = System.currentTimeMillis(),
+                                )
+                            )
+                        }
                     } else {
-                        // Pause so user can read and verify the device ID in admin
-                        statusBar.text = "Starting in 5 seconds…"
-                        stepSuccess.postDelayed({ startPlayback() }, 5_000)
+                        HeartbeatScheduler.schedule(applicationContext)
+                        PlanFetchScheduler.schedule(applicationContext)
+                        UpdateScheduler.schedule(applicationContext)
+                    }
+                    runOnUiThread { startPlayback() }
+                } else {
+                    // Needs admin confirmation — store pending state and show code
+                    prefs.storePairingPending(response.token, response.deviceId, response.pairingCode)
+                    runOnUiThread {
+                        showCode(response.pairingCode)
+                        startPolling()
                     }
                 }
-
             } catch (ex: Exception) {
                 runOnUiThread {
-                    progress.visibility = View.GONE
-                    val cause = ex.message?.take(120) ?: ex.javaClass.simpleName
-                    statusBar.text = "Registration failed: $cause"
-                    registerBtn.isEnabled = true
-                    retryBtn.visibility = View.VISIBLE
+                    showError(ex.message?.take(120) ?: ex.javaClass.simpleName)
                 }
             }
         }
     }
 
-    private fun makeQr(content: String, sizePx: Int): Bitmap {
-        val matrix = MultiFormatWriter().encode(content, BarcodeFormat.QR_CODE, sizePx, sizePx)
-        val pixels = IntArray(sizePx * sizePx) { i ->
-            if (matrix[i % sizePx, i / sizePx]) Color.BLACK else Color.WHITE
+    private fun startPolling() {
+        polling = true
+        uiHandler.postDelayed(pollRunnable, POLL_INTERVAL_MS)
+    }
+
+    private fun showLoading() {
+        card(R.id.card_loading, true)
+        card(R.id.card_code,    false)
+        card(R.id.card_success, false)
+        card(R.id.card_error,   false)
+        status("")
+    }
+
+    private fun showCode(code: String) {
+        card(R.id.card_loading, false)
+        card(R.id.card_code,    true)
+        card(R.id.card_success, false)
+        card(R.id.card_error,   false)
+        findViewById<TextView>(R.id.pairing_code_value).text = code
+        status("")
+    }
+
+    private fun showSuccess() {
+        polling = false
+        uiHandler.removeCallbacks(pollRunnable)
+        card(R.id.card_loading, false)
+        card(R.id.card_code,    false)
+        card(R.id.card_success, true)
+        card(R.id.card_error,   false)
+        status("")
+        uiHandler.postDelayed({ startPlayback() }, 2_000)
+    }
+
+    private fun showError(message: String) {
+        card(R.id.card_loading, false)
+        card(R.id.card_code,    false)
+        card(R.id.card_success, false)
+        card(R.id.card_error,   true)
+        findViewById<TextView>(R.id.error_message).text = message
+        status("")
+        findViewById<Button>(R.id.retry_button).setOnClickListener {
+            autoClaim(DevicePrefs(this))
         }
-        return Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888).also {
-            it.setPixels(pixels, 0, sizePx, 0, 0, sizePx, sizePx)
-        }
+    }
+
+    private fun card(id: Int, visible: Boolean) {
+        findViewById<LinearLayout>(id).visibility = if (visible) View.VISIBLE else View.GONE
+    }
+
+    private fun status(text: String) {
+        val tv = findViewById<TextView?>(R.id.pairing_status) ?: return
+        tv.text = text
     }
 
     private fun startPlayback() {
@@ -213,7 +211,13 @@ class PairingActivity : Activity() {
     }
 
     override fun onDestroy() {
+        polling = false
+        uiHandler.removeCallbacksAndMessages(null)
         executor.shutdownNow()
         super.onDestroy()
+    }
+
+    companion object {
+        private const val POLL_INTERVAL_MS = 5_000L
     }
 }

@@ -1,6 +1,6 @@
 package com.alive.player.network
 
-data class ClaimDeviceResponse(val deviceId: String, val token: String)
+data class ClaimDeviceResponse(val deviceId: String, val token: String, val pairingCode: String)
 
 data class StudioPlanItem(
     val contentId: String,

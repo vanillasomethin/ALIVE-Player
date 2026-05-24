@@ -14,9 +14,9 @@ object DemoApiProvider {
     private val demoToken = "demo-token-${UUID.randomUUID()}"
     private val demoDeviceId = "DEMO-${UUID.randomUUID().toString().take(8).uppercase()}"
 
-    /** Instant claim — returns a pre-baked demo token without hitting a server. */
+    /** Instant claim — returns a pre-baked demo token; pairingCode is empty (auto-confirmed in demo). */
     fun claimDevice(hardwareKey: String): ClaimDeviceResponse =
-        ClaimDeviceResponse(deviceId = demoDeviceId, token = demoToken)
+        ClaimDeviceResponse(deviceId = demoDeviceId, token = demoToken, pairingCode = "")
 
     /**
      * Returns a demo plan JSON in studio format with 4 public-domain images cycling every 8s.
