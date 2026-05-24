@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    package="com.partner.alive">
+    package="com.alive.player">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -19,7 +19,7 @@
         android:supportsRtl="true">
 
         <activity
-            android:name="com.partner.alive.ui.PairingActivity"
+            android:name="com.alive.player.ui.PairingActivity"
             android:exported="true"
             android:theme="@style/Theme.Alive.Pairing">
             <intent-filter>
@@ -34,23 +34,23 @@
             Activity — the foreground service and ExoPlayer keep running uninterrupted.
         -->
         <activity
-            android:name="com.partner.alive.ui.PlaybackActivity"
+            android:name="com.alive.player.ui.PlaybackActivity"
             android:exported="false"
             android:theme="@style/Theme.Alive.Playback"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize" />
 
         <activity
-            android:name="com.partner.alive.settings.SettingsActivity"
+            android:name="com.alive.player.settings.SettingsActivity"
             android:exported="false"
             android:theme="@style/Theme.Alive.Settings" />
 
         <service
-            android:name="com.partner.alive.service.PlaybackForegroundService"
+            android:name="com.alive.player.service.PlaybackForegroundService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
         <service
-            android:name="com.partner.alive.network.AliveMessagingService"
+            android:name="com.alive.player.network.AliveMessagingService"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
@@ -58,7 +58,7 @@
         </service>
 
         <receiver
-            android:name="com.partner.alive.receiver.BootReceiver"
+            android:name="com.alive.player.receiver.BootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
