@@ -97,6 +97,12 @@ class DevicePrefs(context: Context) {
 
     fun getFcmToken(): String? = statusPrefs.getString(KEY_FCM_TOKEN, null)
 
+    fun setClockOffsetMs(offsetMs: Long) {
+        statusPrefs.edit().putLong(KEY_CLOCK_OFFSET_MS, offsetMs).apply()
+    }
+
+    fun getClockOffsetMs(): Long = statusPrefs.getLong(KEY_CLOCK_OFFSET_MS, 0L)
+
     fun clearAll() {
         prefs.edit().clear().apply()
         statusPrefs.edit().clear().apply()
@@ -115,6 +121,7 @@ class DevicePrefs(context: Context) {
         private const val KEY_PLAN_UPDATED_MS = "plan_updated_ms"
         private const val KEY_ORIENTATION     = "orientation_mode"
         private const val KEY_FCM_TOKEN       = "fcm_token"
+        private const val KEY_CLOCK_OFFSET_MS = "clock_offset_ms"
 
         const val ORIENTATION_PORTRAIT         = "portrait"
         const val ORIENTATION_REVERSE_PORTRAIT = "reversePortrait"

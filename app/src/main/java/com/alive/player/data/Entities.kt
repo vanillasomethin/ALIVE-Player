@@ -53,6 +53,7 @@ data class ProofEvent(
     @ColumnInfo(name = "ended_at_epoch_ms") val endedAtEpochMs: Long,
     @ColumnInfo(name = "duration_ms") val durationMs: Long,
     @ColumnInfo(name = "uploaded") val uploaded: Boolean = false,
+    @ColumnInfo(name = "fail_count") val failCount: Int = 0,
 )
 
 @Entity(tableName = "incidents")

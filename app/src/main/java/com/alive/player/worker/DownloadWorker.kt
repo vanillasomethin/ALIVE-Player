@@ -1,6 +1,8 @@
 package com.alive.player.worker
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -19,6 +21,10 @@ class DownloadWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
+        if (!isValidatedNetwork(applicationContext)) {
+            return if (runAttemptCount < 4) Result.retry() else Result.failure()
+        }
+
         val contentId = inputData.getString(KEY_CONTENT_ID) ?: return Result.failure()
         val version = inputData.getString(KEY_VERSION) ?: return Result.failure()
         val sha256 = inputData.getString(KEY_SHA256) ?: return Result.failure()
@@ -48,6 +54,13 @@ class DownloadWorker(
             db.downloadJobDao().update(assetKey, "FAILED", 0L, "download failed or sha256 mismatch")
             if (runAttemptCount < 4) Result.retry() else Result.failure()
         }
+    }
+
+    private fun isValidatedNetwork(context: Context): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val net = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(net) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     companion object {

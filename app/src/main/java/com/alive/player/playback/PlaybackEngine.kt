@@ -24,6 +24,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import com.alive.player.settings.NtpSyncManager
 import com.bumptech.glide.Glide
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -214,6 +215,7 @@ class PlaybackEngine(private val context: Context) {
                 iv.visibility = android.view.View.VISIBLE
                 wv.visibility = android.view.View.GONE
 
+                Glide.with(context).clear(iv)
                 Glide.with(context).load(resolvedUri).centerCrop().into(iv)
                 scheduleAdvanceTimer(item)
             }
@@ -267,7 +269,7 @@ class PlaybackEngine(private val context: Context) {
     }
 
     private fun playItem(item: PlanItem) {
-        val now = System.currentTimeMillis()
+        val now = NtpSyncManager.now(context)
         currentItem?.let { emitCompleteEvent(it, now) }
         currentItem = item
         playStartMs = now
@@ -323,6 +325,7 @@ class PlaybackEngine(private val context: Context) {
                 iv.visibility = android.view.View.VISIBLE
                 wv.visibility = android.view.View.GONE
 
+                Glide.with(context).clear(iv)
                 Glide.with(context).load(resolvedUri).centerCrop().into(iv)
                 scheduleAdvanceTimer(item)
             }
@@ -344,12 +347,14 @@ class PlaybackEngine(private val context: Context) {
         retryRunnable = null
         countdownRunnable?.let { mainHandler.removeCallbacks(it) }
         countdownRunnable = null
-        val now = System.currentTimeMillis()
+        val now = NtpSyncManager.now(context)
         currentItem?.let { emitCompleteEvent(it, now) }
         currentItem = null
-        mainHandler.post {
-            exoPlayer?.release()
-            exoPlayer = null
+        // Capture and null-out before posting to avoid double-release if stop() is called twice
+        val playerToRelease = exoPlayer
+        exoPlayer = null
+        if (playerToRelease != null) {
+            mainHandler.post { playerToRelease.release() }
         }
     }
 
