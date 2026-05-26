@@ -1,6 +1,7 @@
 package com.alive.player.download
 
 import android.content.Context
+import android.os.StatFs
 import com.alive.player.data.AppDatabase
 import com.alive.player.data.Asset
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +52,17 @@ class AssetDownloader(private val context: Context) {
             conn.connect()
 
             val responseCode = conn.responseCode
+
+            // Pre-flight space check: refuse download if free space < content + 50 MB buffer
+            val contentLength = conn.contentLengthLong.takeIf { it > 0 } ?: 0L
+            if (contentLength > 0) {
+                val stat = StatFs(tmp.parentFile?.absolutePath ?: cacheRoot().path)
+                val freeBytes = stat.availableBlocksLong * stat.blockSizeLong
+                if (freeBytes < contentLength + 50L * 1024 * 1024) {
+                    return@withContext null
+                }
+            }
+
             when {
                 responseCode == HttpURLConnection.HTTP_PARTIAL && resumeOffset > 0 -> {
                     // Server honoured the Range header — append to existing tmp
@@ -63,6 +75,9 @@ class AssetDownloader(private val context: Context) {
                 }
                 else -> return@withContext null
             }
+        } catch (_: Exception) {
+            tmp.delete()
+            return@withContext null
         } finally {
             conn.disconnect()
         }
@@ -73,7 +88,16 @@ class AssetDownloader(private val context: Context) {
         }
 
         final.parentFile?.mkdirs()
-        tmp.renameTo(final)
+        // renameTo can fail cross-filesystem (e.g. external→internal); fall back to copy+delete
+        if (!tmp.renameTo(final)) {
+            try {
+                tmp.copyTo(final, overwrite = true)
+                tmp.delete()
+            } catch (_: Exception) {
+                tmp.delete()
+                return@withContext null
+            }
+        }
 
         val db = AppDatabase.get(context)
         db.assetDao().upsert(

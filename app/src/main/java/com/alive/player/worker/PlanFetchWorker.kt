@@ -1,6 +1,8 @@
 package com.alive.player.worker
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.alive.player.data.AppDatabase
@@ -8,6 +10,7 @@ import com.alive.player.data.PlanCache
 import com.alive.player.network.DeviceApiProvider
 import com.alive.player.settings.DevicePrefs
 import com.alive.player.settings.FetchStatus
+import com.alive.player.settings.NtpSyncManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -17,6 +20,11 @@ class PlanFetchWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        // Reject captive-portal networks that pass the CONNECTED check but can't reach our server
+        if (!isValidatedNetwork(applicationContext)) {
+            return@withContext if (runAttemptCount < 3) Result.retry() else Result.success()
+        }
+
         val prefs = DevicePrefs(applicationContext)
         val token = prefs.getDeviceToken() ?: return@withContext Result.failure()
         val dao = AppDatabase.get(applicationContext).planCacheDao()
@@ -57,6 +65,9 @@ class PlanFetchWorker(
                 }
             }
 
+            // Sync NTP after a successful server round-trip (network is confirmed reachable)
+            NtpSyncManager.sync(applicationContext)
+
             when {
                 result.notModified ->
                     prefs.setFetchStatus(FetchStatus.OK.also {
@@ -87,5 +98,12 @@ class PlanFetchWorker(
         val path = url.substringBefore("?").substringAfterLast("/")
         val ext = path.substringAfterLast(".", "")
         return ext.takeIf { it.isNotBlank() && it.length <= 4 }
+    }
+
+    private fun isValidatedNetwork(context: Context): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val net = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(net) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 }
