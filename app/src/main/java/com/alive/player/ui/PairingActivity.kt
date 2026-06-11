@@ -2,6 +2,7 @@ package com.alive.player.ui
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
@@ -12,6 +13,7 @@ import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.view.View
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.alive.player.BuildConfig
@@ -24,6 +26,8 @@ import com.alive.player.settings.DevicePrefs
 import com.alive.player.worker.HeartbeatScheduler
 import com.alive.player.worker.PlanFetchScheduler
 import com.alive.player.worker.UpdateScheduler
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -170,7 +174,22 @@ class PairingActivity : Activity() {
         card(R.id.card_success, false)
         card(R.id.card_error,   false)
         findViewById<TextView>(R.id.pairing_code_value).text = code
+        findViewById<ImageView>(R.id.qr_admin_image).setImageBitmap(
+            generatePairingQr("${BuildConfig.API_BASE_URL}/admin/pair?code=$code")
+        )
         status("")
+    }
+
+    /** QR code linking straight to the admin "connect this screen" page, prefilled with [code]. */
+    private fun generatePairingQr(content: String, sizePx: Int = 300): Bitmap {
+        val matrix = QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, sizePx, sizePx)
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.RGB_565)
+        for (x in 0 until sizePx) {
+            for (y in 0 until sizePx) {
+                bitmap.setPixel(x, y, if (matrix[x, y]) Color.BLACK else Color.WHITE)
+            }
+        }
+        return bitmap
     }
 
     private fun showSuccess() {

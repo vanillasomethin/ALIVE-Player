@@ -175,7 +175,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text='Tap "Pair screen" and enter the code'
+                        android:text="Enter the code — or scan the QR code shown on the right"
                         android:textColor="@color/alive_muted"
                         android:textSize="14sp"
                         android:fontFamily="@font/poppins_regular" />
@@ -255,7 +255,36 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Enter this code in admin → Pair screen"
+                    android:text="Option A — enter this code in admin → Pair screen"
+                    android:textColor="@color/alive_muted"
+                    android:textSize="12sp"
+                    android:fontFamily="@font/poppins_regular"
+                    android:gravity="center"
+                    android:layout_marginBottom="20dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="OR"
+                    android:textColor="@color/alive_muted"
+                    android:textSize="10sp"
+                    android:fontFamily="@font/poppins_bold"
+                    android:letterSpacing="0.22"
+                    android:layout_marginBottom="16dp" />
+
+                <ImageView
+                    android:id="@+id/qr_admin_image"
+                    android:layout_width="100dp"
+                    android:layout_height="100dp"
+                    android:scaleType="fitXY"
+                    android:background="@color/alive_white"
+                    android:padding="6dp"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Option B — scan with your phone to connect automatically"
                     android:textColor="@color/alive_muted"
                     android:textSize="12sp"
                     android:fontFamily="@font/poppins_regular"
