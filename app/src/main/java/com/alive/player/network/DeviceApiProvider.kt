@@ -131,6 +131,18 @@ class DeviceApiProvider(
         postJson("/api/device/fcm-token", JSONObject().put("fcmToken", fcmToken), deviceToken)
     }
 
+    /** Returns null if no release is configured server-side. */
+    fun checkForUpdate(deviceToken: String): UpdateInfo? {
+        val resp = getJson("/api/device/update-check", deviceToken)
+        if (!resp.optBoolean("updateAvailable", false)) return null
+        return UpdateInfo(
+            versionCode = resp.getInt("versionCode"),
+            versionName = resp.optString("versionName", null),
+            apkUrl      = resp.getString("apkUrl"),
+            sha256      = resp.getString("sha256"),
+        )
+    }
+
     private fun postJson(path: String, payload: JSONObject, token: String?): JSONObject {
         val url = URL(baseUrl + path)
         val conn = url.openConnection() as HttpURLConnection
