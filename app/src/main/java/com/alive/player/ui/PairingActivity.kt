@@ -18,6 +18,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.alive.player.BuildConfig
 import com.alive.player.R
+import com.alive.player.admin.OemAutostartHelper
+import com.alive.player.admin.OwnerSetup
 import com.alive.player.data.AppDatabase
 import com.alive.player.data.PlanCache
 import com.alive.player.network.DemoApiProvider
@@ -200,6 +202,14 @@ class PairingActivity : Activity() {
         card(R.id.card_success, true)
         card(R.id.card_error,   false)
         status("")
+
+        // Device-owner installs already get a silent HOME claim (OwnerSetup);
+        // on a non-owner install, prompt staff once to grant OEM autostart
+        // permission manually so the player survives a restrictive OEM kill.
+        if (!OwnerSetup.isDeviceOwner(this) && OemAutostartHelper.isKnownRestrictiveOem()) {
+            OemAutostartHelper.openAutostartSettings(this)
+        }
+
         uiHandler.postDelayed({ startPlayback() }, 2_000)
     }
 

@@ -20,3 +20,100 @@ All 8 features implemented across:
 - `PlaybackActivity.kt` — NetworkCallback, updateStatusCard, diag overlay, 5-tap
 - `activity_settings.xml` — network, storage, pending uploads rows + clear cache button
 - `settings/SettingsFragment.kt` — relative timestamps, new rows, clear cache action
+
+---
+
+# Autostart Hardening + Silent OTA — Implementation Checklist
+
+Goal: close the two real gaps found in the competitive audit — (1) no OEM-proof
+autostart, (2) no working OTA on the sideload-distributed fleet. Decision from
+user: full Device Owner provisioning (existing fleet will be re-enrolled),
+implement both fixes in one pass since they share the same Device Owner base.
+
+## A. Device Owner foundation
+- [x] 1. `AliveDeviceAdminReceiver.kt` — DeviceAdminReceiver subclass
+- [x] 2. `res/xml/device_admin.xml` — policy descriptor (minimal, no special policies needed)
+- [x] 3. AndroidManifest.xml — register receiver w/ BIND_DEVICE_ADMIN + meta-data
+
+## B. Autostart fix (HOME claim, not OEM-intent chasing)
+- [x] 4. AndroidManifest.xml — add CATEGORY_HOME to PairingActivity's intent-filter
+- [x] 5. `OwnerSetup.kt` — once device-owner, silently claim persistent-preferred HOME
+      via `DevicePolicyManager.addPersistentPreferredActivity` (no user prompt)
+- [x] 6. `OemAutostartHelper.kt` — manufacturer-detection fallback (Xiaomi/Realme/
+      OnePlus/Vivo autostart-settings intents) for the pre-enrollment window /
+      defense-in-depth on non-owner installs
+
+## C. Silent OTA
+- [x] 7. studio: `GET /api/device/update-check` — returns latest versionCode/
+      versionName/apkUrl/sha256 from env vars
+- [x] 8. studio: document new endpoint in `ALIVE_PLAYER_API.md`
+- [x] 9. Player: `DeviceApiProvider.checkForUpdate()` — calls the new endpoint
+- [x] 10. Player: `UpdateCheckWorker.kt` + real `UpdateScheduler` (periodic
+      WorkManager, replaces the no-op) — checks version, downloads APK via
+      existing `AssetDownloader` (reused as-is, it's already generic), installs
+      via `PackageInstaller`
+- [x] 11. Silent-install path: API 31+ uses `SessionParams.setRequireUserAction
+      (USER_ACTION_NOT_REQUIRED)` (device-owner only, truly silent). API 26-30
+      has no documented silent-install API for device owner — falls back to the
+      standard confirm-dialog PackageInstaller flow. This is a real OS
+      limitation, not a stub — must be stated plainly, not glossed over.
+- [x] 12. AndroidManifest.xml — REQUEST_INSTALL_PACKAGES permission
+
+## D. Ops
+- [x] 13. `PROVISIONING.md` — zero-touch QR enrollment steps for re-provisioning
+      already-deployed devices into Device Owner mode (factory reset required —
+      operational step, not code)
+
+## Verification
+- [x] `./gradlew compileDebugKotlin` — **could not run**: this sandbox has no
+      Android SDK installed and network policy blocks `dl.google.com` (where
+      AGP/Android SDK artifacts are hosted), so Gradle can't even resolve the
+      `com.android.application` plugin. No prior Gradle/AGP cache exists either.
+      This is an environment limitation, not a code issue. In lieu of a real
+      compile, did a full manual read-through of every new/changed file
+      (manifest, `OwnerSetup.kt`, `AliveDeviceAdminReceiver.kt`,
+      `OemAutostartHelper.kt`, `BootReceiver.kt`, `PairingActivity.kt`,
+      `DeviceApiProvider.kt`/`DeviceApi.kt`, `UpdateCheckWorker.kt`,
+      `UpdateInstallReceiver.kt`, `UpdateScheduler.kt`) cross-checking imports,
+      method signatures against existing call sites (e.g. `AssetDownloader.download`
+      named-arg signature, `DevicePrefs.getDeviceToken()`), API-level guards
+      (`USER_ACTION_NOT_REQUIRED` gated on `SDK_INT >= S`), and manifest
+      component registration. No issues found. **Recommend running a real
+      `./gradlew assembleDebug` in CI or a local Android dev environment before
+      shipping to the fleet.**
+- [x] `npx tsc --noEmit` + `npm run build` clean in studio — both pass,
+      `/api/device/update-check` compiles and builds as a dynamic route.
+- [x] Commit + push both repos to `claude/ecstatic-heisenberg-j93BW`
+
+## Review
+Implemented both fixes on the shared Device Owner foundation, per user
+decision (full-fleet Device Owner re-provisioning, both fixes in one pass):
+
+**Autostart (HOME claim):** `PairingActivity` now also declares a
+`CATEGORY_HOME` intent-filter. Once a device is enrolled as Device Owner,
+`OwnerSetup.onDeviceOwnerReady()` calls `addPersistentPreferredActivity()` to
+silently make it the permanent Home app — no user prompt, and immune to OEM
+autostart/battery-kill restrictions since the OS always relaunches the active
+Home app on boot. Called from `BootReceiver` (every boot, idempotent) and
+`AliveDeviceAdminReceiver.onProfileProvisioningComplete` (right after
+enrollment). `OemAutostartHelper` remains as a manual fallback for the
+pre-enrollment window and for any device that's never re-provisioned.
+
+**Silent OTA:** New `/api/device/update-check` endpoint (studio) reports the
+latest configured release via env vars (no schema change). `UpdateCheckWorker`
+polls it every 6h, reuses `AssetDownloader` unmodified to fetch the APK
+(range-resume + SHA-256 verify), and installs via `PackageInstaller`. On
+Device Owner + API 31+, the install uses `USER_ACTION_NOT_REQUIRED` — fully
+silent. On older API levels, Android has no silent-install API even for
+device owners, so it falls back to the standard confirm dialog
+(`UpdateInstallReceiver` launches it). This is a real platform limitation,
+documented plainly rather than glossed over.
+
+**Ops:** `PROVISIONING.md` documents zero-touch QR enrollment (and the Fire TV
+ADB fallback) for re-provisioning the existing fleet, since both fixes only
+activate once a device is Device Owner.
+
+**Known limitation:** Gradle/Kotlin compilation could not be verified in this
+sandbox (no Android SDK, no network access to Google's Maven repo). Manual
+review of all changed files found no issues, but a real `assembleDebug` build
+should be run before this ships.

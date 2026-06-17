@@ -38,3 +38,10 @@ data class PopEventPayload(
     val endedAt: String,    // ISO
     val durationMs: Long,
 )
+
+data class UpdateInfo(
+    val versionCode: Int,
+    val versionName: String?,
+    val apkUrl: String,
+    val sha256: String,
+)
