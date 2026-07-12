@@ -23,6 +23,11 @@ interface ProofEventDao {
     @Query("DELETE FROM proof_events WHERE uploaded = 1")
     suspend fun deleteUploaded()
 
+    // Server-rejected (fail_count >= 3) events older than the retention window —
+    // keep long enough to investigate, then drop so the table doesn't grow unbounded.
+    @Query("DELETE FROM proof_events WHERE fail_count >= 3 AND started_at_epoch_ms < :beforeEpochMs")
+    suspend fun deleteQuarantinedBefore(beforeEpochMs: Long)
+
     @Query("DELETE FROM proof_events")
     suspend fun clearAll()
 }
