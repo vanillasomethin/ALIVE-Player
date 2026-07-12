@@ -37,6 +37,8 @@ data class DownloadJob(
     @ColumnInfo(name = "state") val state: String,
     @ColumnInfo(name = "retries") val retries: Int,
     @ColumnInfo(name = "bytes_downloaded") val bytesDownloaded: Long,
+    // Expected total size from Content-Length; 0 until the download connects.
+    @ColumnInfo(name = "size_bytes") val sizeBytes: Long = 0L,
     @ColumnInfo(name = "error") val error: String?,
 )
 

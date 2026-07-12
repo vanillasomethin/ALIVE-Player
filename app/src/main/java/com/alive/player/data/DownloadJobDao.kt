@@ -16,6 +16,9 @@ interface DownloadJobDao {
     @Query("UPDATE download_jobs SET state=:state, bytes_downloaded=:bytes, error=:err WHERE asset_key=:key")
     suspend fun update(key: String, state: String, bytes: Long, err: String?)
 
+    @Query("UPDATE download_jobs SET size_bytes=:sizeBytes WHERE asset_key=:key")
+    suspend fun updateSize(key: String, sizeBytes: Long)
+
     @Query("DELETE FROM download_jobs WHERE asset_key = :key")
     suspend fun delete(key: String)
 
