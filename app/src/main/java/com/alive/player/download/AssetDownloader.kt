@@ -61,6 +61,8 @@ class AssetDownloader(private val context: Context) {
                 if (freeBytes < contentLength + 50L * 1024 * 1024) {
                     return@withContext null
                 }
+                AppDatabase.get(context).downloadJobDao()
+                    .updateSize("${contentId}_$version", contentLength)
             }
 
             when {

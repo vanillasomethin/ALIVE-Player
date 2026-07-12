@@ -12,7 +12,10 @@ object HeartbeatScheduler {
     private const val HEARTBEAT_WORK_NAME = "heartbeat_periodic"
 
     fun schedule(context: Context) {
-        val request = PeriodicWorkRequestBuilder<HeartbeatWorker>(1, TimeUnit.MINUTES)
+        // WorkManager enforces a hard 15-minute floor for PeriodicWorkRequest — anything
+        // shorter is silently clamped up to 15 min, so request the real number here
+        // rather than a value the platform will quietly override.
+        val request = PeriodicWorkRequestBuilder<HeartbeatWorker>(15, TimeUnit.MINUTES)
             .setConstraints(
                 Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)

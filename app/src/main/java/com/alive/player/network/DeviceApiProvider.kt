@@ -6,6 +6,10 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
 
+/** Non-2xx HTTP response. Carries the status code so callers can distinguish
+ *  payload rejections (4xx) from transient server/network trouble (5xx). */
+class ApiHttpException(val code: Int, message: String) : Exception(message)
+
 class DeviceApiProvider(
     private val baseUrl: String = com.alive.player.BuildConfig.API_BASE_URL,
 ) {
@@ -37,7 +41,7 @@ class DeviceApiProvider(
         val code = conn.responseCode
         val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
             ?.bufferedReader()?.readText().orEmpty()
-        if (code !in 200..299) throw IllegalStateException("GET $path failed ($code): $body")
+        if (code !in 200..299) throw ApiHttpException(code, "GET $path failed ($code): $body")
         return if (body.isBlank()) JSONObject() else JSONObject(body)
     }
 
@@ -54,7 +58,7 @@ class DeviceApiProvider(
             val code = conn.responseCode
             if (code !in 200..299) {
                 val err = conn.errorStream?.bufferedReader()?.readText().orEmpty()
-                throw IllegalStateException("fetchPlan failed ($code): $err")
+                throw ApiHttpException(code, "fetchPlan failed ($code): $err")
             }
             val body = conn.inputStream.bufferedReader().readText()
             val root = JSONObject(body)
@@ -122,9 +126,20 @@ class DeviceApiProvider(
         postJson("/api/device/events", JSONObject().put("events", arr), deviceToken)
     }
 
-    fun sendHeartbeat(deviceToken: String) {
-        val payload = JSONObject().put("timestamp", java.time.Instant.now().toString())
-        try { postJson("/api/device/ping", payload, deviceToken) } catch (_: Exception) {}
+    /**
+     * Server heartbeat. There is no dedicated ping route — the events endpoint
+     * accepts an empty batch with telemetry and updates lastSeen/status=ONLINE.
+     * Throws on failure so callers (HeartbeatWorker) can retry.
+     */
+    fun sendHeartbeat(deviceToken: String, freeStorageMb: Long? = null) {
+        val telemetry = JSONObject()
+            .put("appVersion", com.alive.player.BuildConfig.VERSION_NAME)
+            .put("androidVersion", android.os.Build.VERSION.RELEASE ?: "")
+        if (freeStorageMb != null) telemetry.put("freeStorageMb", freeStorageMb)
+        val payload = JSONObject()
+            .put("events", JSONArray())
+            .put("telemetry", telemetry)
+        postJson("/api/device/events", payload, deviceToken)
     }
 
     fun updateFcmToken(deviceToken: String, fcmToken: String) {
@@ -156,7 +171,7 @@ class DeviceApiProvider(
         val code = conn.responseCode
         val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
             ?.bufferedReader()?.readText().orEmpty()
-        if (code !in 200..299) throw IllegalStateException("POST $path failed ($code): $body")
+        if (code !in 200..299) throw ApiHttpException(code, "POST $path failed ($code): $body")
         return if (body.isBlank()) JSONObject() else JSONObject(body)
     }
 }
