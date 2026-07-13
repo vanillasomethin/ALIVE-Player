@@ -18,6 +18,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.text.InputType
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.webkit.WebView
@@ -95,6 +96,13 @@ class PlaybackActivity : Activity() {
     // 5-tap gesture → Settings
     private var tapCount = 0
     private var lastTapMs = 0L
+
+    // Kiosk escape hatch: triple-press Select (D-pad center) within 2s → Settings.
+    // Needed because the 5-tap gesture only exists on the waiting overlay, which is
+    // GONE during normal playback — otherwise there'd be no remote-only way to reach
+    // Settings once content is actively playing.
+    private var selectPressCount = 0
+    private var lastSelectPressMs = 0L
 
     // Plan-change detection
     private var lastKnownPlanMs = 0L
@@ -500,5 +508,38 @@ class PlaybackActivity : Activity() {
     @Deprecated("Kiosk mode: back press is suppressed")
     override fun onBackPressed() {
         // intentionally no-op — kiosk mode
+    }
+
+    /**
+     * Kiosk key hardening: swallow navigation keys so an accidental (or curious)
+     * remote press doesn't exit the player. KEYCODE_HOME is a partial measure only —
+     * on a normal (non-lock-task) foreground app, Android delivers HOME to the system
+     * launcher before it ever reaches dispatchKeyEvent, so this can't reliably block
+     * it. Being registered as the persistent HOME app (OwnerSetup) means the system
+     * brings the player right back, but a moment of home-screen exposure is possible.
+     * Fully preventing that needs startLockTask()/setLockTaskPackages() — a bigger,
+     * separate change not included here.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                    val now = System.currentTimeMillis()
+                    if (now - lastSelectPressMs > 2_000) selectPressCount = 0
+                    lastSelectPressMs = now
+                    if (++selectPressCount >= 3) {
+                        selectPressCount = 0
+                        startActivity(Intent(this, SettingsActivity::class.java))
+                    }
+                    return true
+                }
+                KeyEvent.KEYCODE_BACK,
+                KeyEvent.KEYCODE_HOME,
+                KeyEvent.KEYCODE_MENU,
+                KeyEvent.KEYCODE_SEARCH,
+                KeyEvent.KEYCODE_APP_SWITCH -> return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 }
