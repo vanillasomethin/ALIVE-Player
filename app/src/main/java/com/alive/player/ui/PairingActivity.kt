@@ -1,12 +1,15 @@
 package com.alive.player.ui
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.Settings
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -210,6 +213,8 @@ class PairingActivity : Activity() {
             OemAutostartHelper.openAutostartSettings(this)
         }
 
+        requestBatteryOptimizationExemptionOnce()
+
         uiHandler.postDelayed({ startPlayback() }, 2_000)
     }
 
@@ -237,6 +242,27 @@ class PairingActivity : Activity() {
     private fun startPlayback() {
         startActivity(Intent(this, PlaybackActivity::class.java))
         finish()
+    }
+
+    /**
+     * One-time nudge, asked while staff still has the remote in hand during setup.
+     * Without this, aggressive OEM Doze/App-Standby policies can throttle the
+     * foreground service's WorkManager jobs and the watchdog's alarm cadence over a
+     * multi-week unattended deployment. Safe to call every pairing — it's a no-op
+     * once granted, since isIgnoringBatteryOptimizations already reflects that.
+     */
+    private fun requestBatteryOptimizationExemptionOnce() {
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return
+        try {
+            startActivity(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+            )
+        } catch (_: ActivityNotFoundException) {
+            // No Settings app to handle this on some minimal Android TV builds — skip.
+        }
     }
 
     override fun onDestroy() {
