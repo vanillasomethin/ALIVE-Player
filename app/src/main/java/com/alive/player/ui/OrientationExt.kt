@@ -35,6 +35,7 @@ private fun Activity.setRequestedOrientationSafely(orientation: Int) {
 }
 
 private fun orientationConstant(mode: String) = when (mode) {
+    DevicePrefs.ORIENTATION_PORTRAIT         -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     DevicePrefs.ORIENTATION_REVERSE_PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
-    else                                     -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    else                                     -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 }

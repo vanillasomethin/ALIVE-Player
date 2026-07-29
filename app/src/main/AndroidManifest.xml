@@ -13,6 +13,15 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
+    <!--
+        Without these, Play Console assumes a touchscreen is required (the Android
+        default) and filters this app out of the Android TV / Google TV catalog
+        entirely — it never shows up as installable on TV devices even though the
+        manifest already has a LEANBACK_LAUNCHER intent-filter and TV banner.
+    -->
+    <uses-feature android:name="android.software.leanback" android:required="true" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
     <application
         android:name=".AliveApplication"
         android:allowBackup="false"
@@ -26,6 +35,7 @@
             android:name="com.alive.player.ui.PairingActivity"
             android:exported="true"
             android:resizeableActivity="false"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:theme="@style/Theme.Alive.Pairing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

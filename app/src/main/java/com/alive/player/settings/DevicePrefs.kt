@@ -89,7 +89,7 @@ class DevicePrefs(context: Context) {
     }
 
     fun getOrientationMode(): String =
-        statusPrefs.getString(KEY_ORIENTATION, ORIENTATION_PORTRAIT) ?: ORIENTATION_PORTRAIT
+        statusPrefs.getString(KEY_ORIENTATION, ORIENTATION_DEFAULT) ?: ORIENTATION_DEFAULT
 
     fun setFcmToken(token: String) {
         statusPrefs.edit().putString(KEY_FCM_TOKEN, token).apply()
@@ -125,6 +125,7 @@ class DevicePrefs(context: Context) {
 
         const val ORIENTATION_PORTRAIT         = "portrait"
         const val ORIENTATION_REVERSE_PORTRAIT = "reversePortrait"
+        const val ORIENTATION_DEFAULT          = "default"
     }
 }
 
