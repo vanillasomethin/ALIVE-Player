@@ -35,6 +35,7 @@
             android:name="com.alive.player.ui.PairingActivity"
             android:exported="true"
             android:resizeableActivity="false"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:theme="@style/Theme.Alive.Pairing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
