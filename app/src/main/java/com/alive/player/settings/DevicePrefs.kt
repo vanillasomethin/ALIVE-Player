@@ -103,6 +103,23 @@ class DevicePrefs(context: Context) {
 
     fun getClockOffsetMs(): Long = statusPrefs.getLong(KEY_CLOCK_OFFSET_MS, 0L)
 
+    // ── Remote-configurable player behavior (server-driven, no APK rebuild needed) ──
+
+    fun setRetryIntervalMs(ms: Long) { statusPrefs.edit().putLong(KEY_RETRY_INTERVAL_MS, ms).apply() }
+    fun getRetryIntervalMs(): Long = statusPrefs.getLong(KEY_RETRY_INTERVAL_MS, DEFAULT_RETRY_INTERVAL_MS)
+
+    fun setTransitionDurationMs(ms: Long) { statusPrefs.edit().putLong(KEY_TRANSITION_DURATION_MS, ms).apply() }
+    fun getTransitionDurationMs(): Long = statusPrefs.getLong(KEY_TRANSITION_DURATION_MS, DEFAULT_TRANSITION_DURATION_MS)
+
+    fun setKioskKeyLockEnabled(enabled: Boolean) { statusPrefs.edit().putBoolean(KEY_KIOSK_KEY_LOCK, enabled).apply() }
+    fun isKioskKeyLockEnabled(): Boolean = statusPrefs.getBoolean(KEY_KIOSK_KEY_LOCK, true)
+
+    fun setDownloadConnectTimeoutMs(ms: Int) { statusPrefs.edit().putInt(KEY_DL_CONNECT_TIMEOUT_MS, ms).apply() }
+    fun getDownloadConnectTimeoutMs(): Int = statusPrefs.getInt(KEY_DL_CONNECT_TIMEOUT_MS, DEFAULT_DL_CONNECT_TIMEOUT_MS)
+
+    fun setDownloadReadTimeoutMs(ms: Int) { statusPrefs.edit().putInt(KEY_DL_READ_TIMEOUT_MS, ms).apply() }
+    fun getDownloadReadTimeoutMs(): Int = statusPrefs.getInt(KEY_DL_READ_TIMEOUT_MS, DEFAULT_DL_READ_TIMEOUT_MS)
+
     fun clearAll() {
         prefs.edit().clear().apply()
         statusPrefs.edit().clear().apply()
@@ -122,6 +139,16 @@ class DevicePrefs(context: Context) {
         private const val KEY_ORIENTATION     = "orientation_mode"
         private const val KEY_FCM_TOKEN       = "fcm_token"
         private const val KEY_CLOCK_OFFSET_MS = "clock_offset_ms"
+        private const val KEY_RETRY_INTERVAL_MS      = "cfg_retry_interval_ms"
+        private const val KEY_TRANSITION_DURATION_MS = "cfg_transition_duration_ms"
+        private const val KEY_KIOSK_KEY_LOCK         = "cfg_kiosk_key_lock"
+        private const val KEY_DL_CONNECT_TIMEOUT_MS  = "cfg_dl_connect_timeout_ms"
+        private const val KEY_DL_READ_TIMEOUT_MS     = "cfg_dl_read_timeout_ms"
+
+        private const val DEFAULT_RETRY_INTERVAL_MS      = 30_000L
+        private const val DEFAULT_TRANSITION_DURATION_MS = 600L
+        private const val DEFAULT_DL_CONNECT_TIMEOUT_MS  = 30_000
+        private const val DEFAULT_DL_READ_TIMEOUT_MS     = 60_000
 
         const val ORIENTATION_PORTRAIT         = "portrait"
         const val ORIENTATION_REVERSE_PORTRAIT = "reversePortrait"

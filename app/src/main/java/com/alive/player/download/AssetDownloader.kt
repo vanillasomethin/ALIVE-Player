@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.StatFs
 import com.alive.player.data.AppDatabase
 import com.alive.player.data.Asset
+import com.alive.player.settings.DevicePrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -44,8 +45,9 @@ class AssetDownloader(private val context: Context) {
 
         val conn = URL(uri).openConnection() as HttpURLConnection
         try {
-            conn.connectTimeout = 30_000
-            conn.readTimeout = 60_000
+            val prefs = DevicePrefs(context)
+            conn.connectTimeout = prefs.getDownloadConnectTimeoutMs()
+            conn.readTimeout = prefs.getDownloadReadTimeoutMs()
             if (resumeOffset > 0) {
                 conn.setRequestProperty("Range", "bytes=$resumeOffset-")
             }
