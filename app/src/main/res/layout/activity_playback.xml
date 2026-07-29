@@ -5,28 +5,40 @@
     android:layout_height="match_parent"
     android:background="@android:color/black">
 
-    <!-- ── Media renderers (hidden until content plays) ───── -->
-
-    <androidx.media3.ui.PlayerView
-        android:id="@+id/player_view"
+    <!-- ── Media renderers (hidden until content plays) ─────
+         Wrapped so PlaybackActivity can rotate this container in software
+         (see applyContentRotation()) instead of relying on Activity
+         requestedOrientation. Many budget/OEM Android TV panels accept an
+         orientation request without physically rotating, which otherwise
+         squeezes portrait content into a small region of the landscape
+         panel instead of filling it. -->
+    <FrameLayout
+        android:id="@+id/content_rotator"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone"
-        app:use_controller="false"
-        app:resize_mode="fill" />
+        android:layout_height="match_parent">
 
-    <ImageView
-        android:id="@+id/image_view"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone"
-        android:scaleType="centerCrop" />
+        <androidx.media3.ui.PlayerView
+            android:id="@+id/player_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone"
+            app:use_controller="false"
+            app:resize_mode="fill" />
 
-    <WebView
-        android:id="@+id/web_view"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone" />
+        <ImageView
+            android:id="@+id/image_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone"
+            android:scaleType="centerCrop" />
+
+        <WebView
+            android:id="@+id/web_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+    </FrameLayout>
 
     <!-- ── "Waiting for content" overlay ─────────────────── -->
     <RelativeLayout
