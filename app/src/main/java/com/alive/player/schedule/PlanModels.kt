@@ -14,7 +14,11 @@ data class PlanItem(
     val scheduleId: String? = null,
 )
 
-data class Plan(val windows: List<PlanWindow>, val fallbackItems: List<PlanItem>)
+data class Plan(
+    val windows: List<PlanWindow>,
+    val fallbackItems: List<PlanItem>,
+    val transition: String = "NONE", // "NONE" | "FADE" | "SLIDE" -- set per playlist in admin
+)
 
 private fun extFromUrl(url: String): String? {
     val path = url.substringBefore("?").substringAfterLast("/")
@@ -68,7 +72,7 @@ fun parsePlan(json: String): Plan {
             }
         }
 
-        return Plan(windows = windows, fallbackItems = items)
+        return Plan(windows = windows, fallbackItems = items, transition = root.optString("transition", "NONE"))
     }
 
     // Legacy format: windows + fallback_items
