@@ -63,6 +63,10 @@ class DeviceApiProvider(
             val body = conn.inputStream.bufferedReader().readText()
             val root = JSONObject(body)
             val planHash = root.optString("planHash", null)
+            // Not part of planHash: an orientation-only admin change shouldn't force a
+            // content re-download, but must still be read on every poll (including
+            // the notModified short-circuit below).
+            val orientation = root.optString("orientation", null)
             if (planHash != null && planHash == lastPlanHash) {
                 return FetchPlanResult(
                     rawJson = null,
@@ -71,6 +75,7 @@ class DeviceApiProvider(
                     items = emptyList(),
                     timeline = emptyList(),
                     notModified = true,
+                    orientation = orientation,
                 )
             }
             val itemsArr = root.optJSONArray("items") ?: JSONArray()
@@ -105,6 +110,7 @@ class DeviceApiProvider(
                 items = items,
                 timeline = timeline,
                 notModified = false,
+                orientation = orientation,
             )
         } finally {
             conn.disconnect()

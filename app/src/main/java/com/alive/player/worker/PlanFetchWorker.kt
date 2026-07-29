@@ -36,6 +36,15 @@ class PlanFetchWorker(
         return@withContext try {
             val result = DeviceApiProvider().fetchPlan(token, lastPlanHash)
 
+            // Admin-assigned orientation isn't part of planHash (it shouldn't force a
+            // content re-download), so apply it on every successful fetch, not just when
+            // the plan content changed. AUTO/unset means "defer to the on-device 5-tap
+            // rotate control" -- only an explicit choice overrides the local preference.
+            when (result.orientation?.uppercase()) {
+                "PORTRAIT"  -> prefs.setOrientationMode(DevicePrefs.ORIENTATION_PORTRAIT)
+                "LANDSCAPE" -> prefs.setOrientationMode(DevicePrefs.ORIENTATION_LANDSCAPE)
+            }
+
             if (!result.notModified && result.rawJson != null) {
                 dao.upsert(
                     PlanCache(

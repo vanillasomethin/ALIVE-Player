@@ -28,6 +28,7 @@ data class FetchPlanResult(
     val items: List<StudioPlanItem>,
     val timeline: List<StudioTimelineSlot>,
     val notModified: Boolean,
+    val orientation: String? = null, // "LANDSCAPE" | "PORTRAIT" | "AUTO" — admin-assigned screen orientation
 )
 
 data class PopEventPayload(
