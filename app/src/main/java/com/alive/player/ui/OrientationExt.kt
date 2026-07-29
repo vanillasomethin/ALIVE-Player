@@ -2,10 +2,13 @@ package com.alive.player.ui
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.util.Log
 import com.alive.player.settings.DevicePrefs
 
+private const val TAG = "OrientationExt"
+
 fun Activity.applyOrientationPref() {
-    requestedOrientation = orientationConstant(DevicePrefs(this).getOrientationMode())
+    setRequestedOrientationSafely(orientationConstant(DevicePrefs(this).getOrientationMode()))
 }
 
 fun Activity.cycleOrientation() {
@@ -16,7 +19,19 @@ fun Activity.cycleOrientation() {
         else                                     -> DevicePrefs.ORIENTATION_PORTRAIT
     }
     prefs.setOrientationMode(next)
-    requestedOrientation = orientationConstant(next)
+    setRequestedOrientationSafely(orientationConstant(next))
+}
+
+// Some OEM Android TV firmware (e.g. non-certified "smart TV" builds) hosts the
+// activity in a window the framework doesn't consider strictly fullscreen, which makes
+// setRequestedOrientation() throw AndroidRuntimeException and kill the app outright.
+// Swallow it so playback keeps running in whatever orientation the OS already gave us.
+private fun Activity.setRequestedOrientationSafely(orientation: Int) {
+    try {
+        requestedOrientation = orientation
+    } catch (e: android.util.AndroidRuntimeException) {
+        Log.w(TAG, "setRequestedOrientation($orientation) rejected by OS, keeping current orientation", e)
+    }
 }
 
 private fun orientationConstant(mode: String) = when (mode) {

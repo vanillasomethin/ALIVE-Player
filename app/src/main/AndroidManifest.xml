@@ -19,12 +19,13 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:banner="@drawable/ic_tv_banner"
-        android:label="alive"
+        android:label="@string/app_name"
         android:supportsRtl="true">
 
         <activity
             android:name="com.alive.player.ui.PairingActivity"
             android:exported="true"
+            android:resizeableActivity="false"
             android:theme="@style/Theme.Alive.Pairing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -50,12 +51,14 @@
         <activity
             android:name="com.alive.player.ui.PlaybackActivity"
             android:exported="false"
+            android:resizeableActivity="false"
             android:theme="@style/Theme.Alive.Playback"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize" />
 
         <activity
             android:name="com.alive.player.settings.SettingsActivity"
             android:exported="false"
+            android:resizeableActivity="false"
             android:theme="@style/Theme.Alive.Settings" />
 
         <service
