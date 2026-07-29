@@ -38,6 +38,7 @@ data class FetchPlanResult(
     val notModified: Boolean,
     val orientation: String? = null, // "LANDSCAPE" | "PORTRAIT" | "AUTO" — admin-assigned screen orientation
     val config: PlayerConfig? = null,
+    val fallbackItems: List<StudioPlanItem> = emptyList(), // admin fallback playlist — needs downloading too
 )
 
 data class PopEventPayload(

@@ -66,7 +66,9 @@ class PlanFetchWorker(
                     )
                 )
                 prefs.markPlanUpdated()
-                for (item in result.items) {
+                // Fallback-playlist items must be cached too, or the fallback would
+                // stream (or fail) exactly when it's needed.
+                for (item in (result.items + result.fallbackItems).distinctBy { it.contentId }) {
                     // Fall back to type-based extension for CDN URLs with no path extension
                     val ext = extFromUrl(item.url)
                         ?: when (item.type.lowercase()) {

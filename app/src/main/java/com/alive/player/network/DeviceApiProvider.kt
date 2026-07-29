@@ -88,9 +88,8 @@ class DeviceApiProvider(
                     config = config,
                 )
             }
-            val itemsArr = root.optJSONArray("items") ?: JSONArray()
-            val items = (0 until itemsArr.length()).map { i ->
-                val o = itemsArr.getJSONObject(i)
+            fun parseItems(arr: JSONArray) = (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
                 StudioPlanItem(
                     contentId = o.getString("contentId"),
                     objectKey = o.getString("objectKey"),
@@ -101,6 +100,8 @@ class DeviceApiProvider(
                     order = o.getInt("order"),
                 )
             }
+            val items = parseItems(root.optJSONArray("items") ?: JSONArray())
+            val fallbackItems = parseItems(root.optJSONArray("fallback") ?: JSONArray())
             val timelineArr = root.optJSONArray("timeline") ?: JSONArray()
             val timeline = (0 until timelineArr.length()).map { i ->
                 val o = timelineArr.getJSONObject(i)
@@ -122,6 +123,7 @@ class DeviceApiProvider(
                 notModified = false,
                 orientation = orientation,
                 config = config,
+                fallbackItems = fallbackItems,
             )
         } finally {
             conn.disconnect()

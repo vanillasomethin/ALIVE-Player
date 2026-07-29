@@ -72,7 +72,32 @@ fun parsePlan(json: String): Plan {
             }
         }
 
-        return Plan(windows = windows, fallbackItems = items, transition = root.optString("transition", "NONE"))
+        // Server-designated fallback playlist (admin "Fallback playlist" setting):
+        // played when no schedule window is active. Absent/empty keeps the historical
+        // behaviour of looping the scheduled items round the clock.
+        val fallbackArr = root.optJSONArray("fallback")
+        val fallbackItems = if (fallbackArr != null && fallbackArr.length() > 0) buildList {
+            for (i in 0 until fallbackArr.length()) {
+                val o = fallbackArr.getJSONObject(i)
+                val url  = o.getString("url")
+                val type = o.getString("type").lowercase()
+                add(PlanItem(
+                    contentVersionId = o.getString("contentId"),
+                    durationMs = o.getLong("durationMs"),
+                    type = type,
+                    uri = url,
+                    sha256 = o.optString("md5", null).takeIf { !it.isNullOrBlank() },
+                    ext = extFromUrl(url) ?: when (type) {
+                        "video" -> "mp4"
+                        "image" -> "jpg"
+                        else    -> null
+                    },
+                    scheduleId = null,
+                ))
+            }
+        } else items
+
+        return Plan(windows = windows, fallbackItems = fallbackItems, transition = root.optString("transition", "NONE"))
     }
 
     // Legacy format: windows + fallback_items
