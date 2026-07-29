@@ -3,6 +3,7 @@ package com.alive.player.playback
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.view.View
 import android.webkit.WebView
 import android.widget.ImageView
 import androidx.media3.common.MediaItem
@@ -36,6 +37,7 @@ class PlaybackEngine(private val context: Context) {
 
     private var currentItem: PlanItem? = null
     private var playStartMs: Long = 0L
+    private var currentTransition: String = "NONE" // "NONE" | "FADE" | "SLIDE" -- set per playlist in admin
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var advanceRunnable: Runnable? = null
@@ -138,9 +140,11 @@ class PlaybackEngine(private val context: Context) {
 
     companion object {
         private const val RETRY_INTERVAL_MS = 30_000L
+        private const val TRANSITION_DURATION_MS = 600L
     }
 
     private fun advance(plan: com.alive.player.schedule.Plan) {
+        currentTransition = plan.transition
         val now = System.currentTimeMillis()
         val activeWindow = plan.windows.firstOrNull { it.startEpochMs <= now && now < it.endEpochMs }
 
@@ -182,12 +186,16 @@ class PlaybackEngine(private val context: Context) {
         }
         val resolvedUri = if (localFile != null) android.net.Uri.fromFile(localFile) else android.net.Uri.parse(item.uri)
 
+        val newView: View = when (item.type) {
+            "video" -> pv
+            "image" -> iv
+            "web"   -> wv
+            else    -> return
+        }
+        val oldView = listOf(pv, iv, wv).firstOrNull { it !== newView && it.visibility == android.view.View.VISIBLE }
+
         when (item.type) {
             "video" -> {
-                pv.visibility = android.view.View.VISIBLE
-                iv.visibility = android.view.View.GONE
-                wv.visibility = android.view.View.GONE
-
                 val player = exoPlayer ?: return
                 cancelAdvanceTimer()
                 player.clearMediaItems()
@@ -211,22 +219,59 @@ class PlaybackEngine(private val context: Context) {
                 scheduleAdvanceTimer(item)
             }
             "image" -> {
-                pv.visibility = android.view.View.GONE
-                iv.visibility = android.view.View.VISIBLE
-                wv.visibility = android.view.View.GONE
-
                 Glide.with(context).clear(iv)
                 Glide.with(context).load(resolvedUri).centerCrop().into(iv)
                 scheduleAdvanceTimer(item)
             }
             "web" -> {
-                pv.visibility = android.view.View.GONE
-                iv.visibility = android.view.View.GONE
-                wv.visibility = android.view.View.VISIBLE
-
                 wv.settings.javaScriptEnabled = false
                 wv.loadUrl(item.uri)
                 scheduleAdvanceTimer(item)
+            }
+        }
+
+        transitionViews(oldView, newView)
+    }
+
+    /**
+     * Cross-fades or slides from the previously-visible renderer to the new one, per the
+     * playlist's transition setting. Same-view switches (e.g. video -> video) skip the
+     * transition entirely -- ExoPlayer just swaps the media item in place.
+     */
+    private fun transitionViews(oldView: View?, newView: View) {
+        if (oldView === newView) {
+            newView.visibility = android.view.View.VISIBLE
+            newView.alpha = 1f
+            newView.translationX = 0f
+            return
+        }
+        when (currentTransition) {
+            "FADE" -> {
+                newView.alpha = 0f
+                newView.translationX = 0f
+                newView.visibility = android.view.View.VISIBLE
+                newView.animate().alpha(1f).setDuration(TRANSITION_DURATION_MS).start()
+                oldView?.animate()?.alpha(0f)?.setDuration(TRANSITION_DURATION_MS)?.withEndAction {
+                    oldView.visibility = android.view.View.GONE
+                    oldView.alpha = 1f
+                }?.start()
+            }
+            "SLIDE" -> {
+                val w = (newView.width.takeIf { it > 0 } ?: context.resources.displayMetrics.widthPixels).toFloat()
+                newView.alpha = 1f
+                newView.translationX = w
+                newView.visibility = android.view.View.VISIBLE
+                newView.animate().translationX(0f).setDuration(TRANSITION_DURATION_MS).start()
+                oldView?.animate()?.translationX(-w)?.setDuration(TRANSITION_DURATION_MS)?.withEndAction {
+                    oldView.visibility = android.view.View.GONE
+                    oldView.translationX = 0f
+                }?.start()
+            }
+            else -> {
+                oldView?.visibility = android.view.View.GONE
+                newView.alpha = 1f
+                newView.translationX = 0f
+                newView.visibility = android.view.View.VISIBLE
             }
         }
     }
