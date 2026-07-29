@@ -2,6 +2,8 @@
     <string name="app_name">ALIVE Player</string>
     <string name="notification_channel_name">Playback</string>
     <string name="notification_playing">Playing scheduled content</string>
+    <string name="notification_watchdog_channel_name">Watchdog</string>
+    <string name="notification_watchdog_active">Monitoring playback health</string>
     <string name="settings_title">Device Settings</string>
     <string name="settings_device_id">Device ID</string>
     <string name="settings_paired_at">Paired at</string>

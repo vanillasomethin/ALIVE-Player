@@ -12,6 +12,12 @@ import android.os.PowerManager
 import com.alive.player.R
 import com.alive.player.playback.PlaybackEngine
 import com.alive.player.playback.PlaybackWatchdog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 class PlaybackForegroundService : Service() {
 
@@ -20,6 +26,7 @@ class PlaybackForegroundService : Service() {
 
     private lateinit var watchdog: PlaybackWatchdog
     private lateinit var wakeLock: PowerManager.WakeLock
+    private var heartbeatJob: Job? = null
 
     inner class LocalBinder : Binder() {
         fun getService() = this@PlaybackForegroundService
@@ -39,6 +46,16 @@ class PlaybackForegroundService : Service() {
             engine.startLoop()
         }
         watchdog.start()
+
+        // Cross-process watchdog: keep it running, and feed it a liveness signal from
+        // a background thread so it still gets written even if the main Looper wedges.
+        WatchdogService.ensureRunning(applicationContext)
+        heartbeatJob = CoroutineScope(Dispatchers.IO).launch {
+            while (isActive) {
+                ProcessHeartbeat.write(applicationContext)
+                delay(10_000)
+            }
+        }
     }
 
     override fun onBind(intent: Intent): IBinder = binder
@@ -46,6 +63,7 @@ class PlaybackForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
 
     override fun onDestroy() {
+        heartbeatJob?.cancel()
         watchdog.stop()
         engine.stop()
         if (wakeLock.isHeld) wakeLock.release()
