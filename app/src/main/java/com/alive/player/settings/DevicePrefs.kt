@@ -125,6 +125,7 @@ class DevicePrefs(context: Context) {
 
         const val ORIENTATION_PORTRAIT         = "portrait"
         const val ORIENTATION_REVERSE_PORTRAIT = "reversePortrait"
+        const val ORIENTATION_LANDSCAPE        = "landscape"
         const val ORIENTATION_DEFAULT          = "default"
     }
 }

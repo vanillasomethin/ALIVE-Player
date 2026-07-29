@@ -108,6 +108,11 @@ class PlaybackActivity : Activity() {
     private var lastKnownPlanMs = 0L
     private val planPollRunnable = object : Runnable {
         override fun run() {
+            // Admin-assigned orientation isn't part of the plan-changed signal below (it
+            // doesn't bump planUpdatedMs), so re-apply it every tick -- cheap and a no-op
+            // when unchanged, but picks up a remote orientation change within one poll.
+            applyOrientationPref()
+
             val updatedMs = DevicePrefs(this@PlaybackActivity).getPlanUpdatedMs()
             when {
                 lastKnownPlanMs == 0L       -> lastKnownPlanMs = updatedMs
