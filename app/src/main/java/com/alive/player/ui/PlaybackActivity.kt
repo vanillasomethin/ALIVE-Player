@@ -60,6 +60,7 @@ class PlaybackActivity : Activity() {
     private lateinit var playerView: PlayerView
     private lateinit var imageView: ImageView
     private lateinit var webView: WebView
+    private lateinit var contentRotator: FrameLayout
     private lateinit var waitingOverlay: RelativeLayout
     private lateinit var waitingProgress: ProgressBar
     private lateinit var statusIcon: TextView
@@ -111,7 +112,7 @@ class PlaybackActivity : Activity() {
             // Admin-assigned orientation isn't part of the plan-changed signal below (it
             // doesn't bump planUpdatedMs), so re-apply it every tick -- cheap and a no-op
             // when unchanged, but picks up a remote orientation change within one poll.
-            applyOrientationPref()
+            applyContentRotation()
 
             val updatedMs = DevicePrefs(this@PlaybackActivity).getPlanUpdatedMs()
             when {
@@ -203,13 +204,14 @@ class PlaybackActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        applyOrientationPref()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_playback)
 
         playerView        = findViewById(R.id.player_view)
         imageView         = findViewById(R.id.image_view)
         webView           = findViewById(R.id.web_view)
+        contentRotator    = findViewById(R.id.content_rotator)
+        applyContentRotation()
         waitingOverlay    = findViewById(R.id.waiting_overlay)
         waitingProgress   = findViewById(R.id.waiting_progress)
         statusIcon        = findViewById(R.id.status_icon)
@@ -242,6 +244,7 @@ class PlaybackActivity : Activity() {
         // ── Rotate ───────────────────────────────────────────────────────
         btnRotate.setOnClickListener {
             cycleOrientation()
+            applyContentRotation()
             flashControl(btnRotate)
         }
 
@@ -285,6 +288,36 @@ class PlaybackActivity : Activity() {
         val serviceIntent = Intent(this, PlaybackForegroundService::class.java)
         startForegroundService(serviceIntent)
         bindService(serviceIntent, connection, BIND_AUTO_CREATE)
+    }
+
+    // Many budget/OEM Android TV panels accept requestedOrientation without physically
+    // rotating -- the window shrinks to a portrait-shaped region in the middle of the
+    // still-landscape panel instead of filling it. Rotating the content container itself
+    // (and swapping its measured dimensions to match) fills the real panel regardless of
+    // whether the hardware actually rotates, and gives us a "reverse portrait" that
+    // reliably works instead of depending on OS-level SCREEN_ORIENTATION_REVERSE_PORTRAIT
+    // support.
+    private fun applyContentRotation() {
+        val screenW = resources.displayMetrics.widthPixels
+        val screenH = resources.displayMetrics.heightPixels
+        val mode = DevicePrefs(this).getOrientationMode()
+        val rotation = when (mode) {
+            DevicePrefs.ORIENTATION_PORTRAIT         -> 90f
+            DevicePrefs.ORIENTATION_REVERSE_PORTRAIT -> -90f
+            else                                     -> 0f
+        }
+        if (contentRotator.rotation == rotation) return
+        contentRotator.rotation = rotation
+        val lp = contentRotator.layoutParams
+        if (rotation == 0f) {
+            lp.width  = FrameLayout.LayoutParams.MATCH_PARENT
+            lp.height = FrameLayout.LayoutParams.MATCH_PARENT
+        } else {
+            // Swapped so the rotated bounding box exactly fills the physical (landscape) panel
+            lp.width  = screenH
+            lp.height = screenW
+        }
+        contentRotator.layoutParams = lp
     }
 
     private fun triggerRefresh() {
@@ -535,8 +568,13 @@ class PlaybackActivity : Activity() {
                     if (++selectPressCount >= 3) {
                         selectPressCount = 0
                         startActivity(Intent(this, SettingsActivity::class.java))
+                        return true
                     }
-                    return true
+                    // Only swallow the press when there's no interactive control to click
+                    // (active playback, waiting overlay hidden). When the waiting overlay
+                    // is showing (Retry Now, rotate, refresh buttons), let it through so
+                    // the focused button actually receives the click.
+                    if (waitingOverlay.visibility != View.VISIBLE) return true
                 }
                 KeyEvent.KEYCODE_BACK,
                 KeyEvent.KEYCODE_HOME,
