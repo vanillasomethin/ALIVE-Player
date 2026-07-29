@@ -19,7 +19,7 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:banner="@drawable/ic_tv_banner"
-        android:label="alive"
+        android:label="@string/app_name"
         android:supportsRtl="true">
 
         <activity
