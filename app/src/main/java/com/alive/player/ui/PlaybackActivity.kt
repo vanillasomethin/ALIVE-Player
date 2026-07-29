@@ -580,7 +580,11 @@ class PlaybackActivity : Activity() {
                 KeyEvent.KEYCODE_HOME,
                 KeyEvent.KEYCODE_MENU,
                 KeyEvent.KEYCODE_SEARCH,
-                KeyEvent.KEYCODE_APP_SWITCH -> return true
+                KeyEvent.KEYCODE_APP_SWITCH ->
+                    // Remote-configurable (see PlayerConfig.kioskKeyLockEnabled) so a
+                    // technician can get full remote control back for debugging without
+                    // a rebuild.
+                    if (DevicePrefs(this).isKioskKeyLockEnabled()) return true
             }
         }
         return super.dispatchKeyEvent(event)

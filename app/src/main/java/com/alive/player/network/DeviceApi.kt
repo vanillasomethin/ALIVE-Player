@@ -21,6 +21,14 @@ data class StudioTimelineSlot(
     val name: String?,
 )
 
+data class PlayerConfig(
+    val retryIntervalMs: Long?,
+    val transitionDurationMs: Long?,
+    val kioskKeyLockEnabled: Boolean?,
+    val downloadConnectTimeoutMs: Int?,
+    val downloadReadTimeoutMs: Int?,
+)
+
 data class FetchPlanResult(
     val rawJson: String?,
     val planHash: String?,
@@ -29,6 +37,7 @@ data class FetchPlanResult(
     val timeline: List<StudioTimelineSlot>,
     val notModified: Boolean,
     val orientation: String? = null, // "LANDSCAPE" | "PORTRAIT" | "AUTO" — admin-assigned screen orientation
+    val config: PlayerConfig? = null,
 )
 
 data class PopEventPayload(

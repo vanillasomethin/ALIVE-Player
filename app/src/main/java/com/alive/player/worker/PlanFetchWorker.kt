@@ -45,6 +45,17 @@ class PlanFetchWorker(
                 "LANDSCAPE" -> prefs.setOrientationMode(DevicePrefs.ORIENTATION_LANDSCAPE)
             }
 
+            // Same reasoning as orientation: fleet-wide behavior knobs aren't part of
+            // planHash, so apply them on every successful fetch regardless of whether
+            // the plan content changed.
+            result.config?.let { cfg ->
+                cfg.retryIntervalMs?.let { prefs.setRetryIntervalMs(it) }
+                cfg.transitionDurationMs?.let { prefs.setTransitionDurationMs(it) }
+                cfg.kioskKeyLockEnabled?.let { prefs.setKioskKeyLockEnabled(it) }
+                cfg.downloadConnectTimeoutMs?.let { prefs.setDownloadConnectTimeoutMs(it) }
+                cfg.downloadReadTimeoutMs?.let { prefs.setDownloadReadTimeoutMs(it) }
+            }
+
             if (!result.notModified && result.rawJson != null) {
                 dao.upsert(
                     PlanCache(

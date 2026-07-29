@@ -103,14 +103,15 @@ class PlaybackEngine(private val context: Context) {
     }
 
     private var countdownRunnable: Runnable? = null
-    private var retrySecondsLeft = (RETRY_INTERVAL_MS / 1000).toInt()
+    private var retrySecondsLeft = (DevicePrefs(context).getRetryIntervalMs() / 1000).toInt()
 
     private fun startRetryCountdown() {
-        retrySecondsLeft = (RETRY_INTERVAL_MS / 1000).toInt()
+        val retryIntervalMs = DevicePrefs(context).getRetryIntervalMs()
+        retrySecondsLeft = (retryIntervalMs / 1000).toInt()
         tickCountdown()
         val retry = Runnable { startLoop() }
         retryRunnable = retry
-        mainHandler.postDelayed(retry, RETRY_INTERVAL_MS)
+        mainHandler.postDelayed(retry, retryIntervalMs)
     }
 
     private fun tickCountdown() {
@@ -136,11 +137,6 @@ class PlaybackEngine(private val context: Context) {
             null                         -> "Waiting for schedule…$countdown"
             else                         -> "Waiting…$countdown"
         }
-    }
-
-    companion object {
-        private const val RETRY_INTERVAL_MS = 30_000L
-        private const val TRANSITION_DURATION_MS = 600L
     }
 
     private fun advance(plan: com.alive.player.schedule.Plan) {
@@ -245,13 +241,14 @@ class PlaybackEngine(private val context: Context) {
             newView.translationX = 0f
             return
         }
+        val durationMs = DevicePrefs(context).getTransitionDurationMs()
         when (currentTransition) {
             "FADE" -> {
                 newView.alpha = 0f
                 newView.translationX = 0f
                 newView.visibility = android.view.View.VISIBLE
-                newView.animate().alpha(1f).setDuration(TRANSITION_DURATION_MS).start()
-                oldView?.animate()?.alpha(0f)?.setDuration(TRANSITION_DURATION_MS)?.withEndAction {
+                newView.animate().alpha(1f).setDuration(durationMs).start()
+                oldView?.animate()?.alpha(0f)?.setDuration(durationMs)?.withEndAction {
                     oldView.visibility = android.view.View.GONE
                     oldView.alpha = 1f
                 }?.start()
@@ -261,8 +258,8 @@ class PlaybackEngine(private val context: Context) {
                 newView.alpha = 1f
                 newView.translationX = w
                 newView.visibility = android.view.View.VISIBLE
-                newView.animate().translationX(0f).setDuration(TRANSITION_DURATION_MS).start()
-                oldView?.animate()?.translationX(-w)?.setDuration(TRANSITION_DURATION_MS)?.withEndAction {
+                newView.animate().translationX(0f).setDuration(durationMs).start()
+                oldView?.animate()?.translationX(-w)?.setDuration(durationMs)?.withEndAction {
                     oldView.visibility = android.view.View.GONE
                     oldView.translationX = 0f
                 }?.start()

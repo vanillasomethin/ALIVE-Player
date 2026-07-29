@@ -63,10 +63,19 @@ class DeviceApiProvider(
             val body = conn.inputStream.bufferedReader().readText()
             val root = JSONObject(body)
             val planHash = root.optString("planHash", null)
-            // Not part of planHash: an orientation-only admin change shouldn't force a
-            // content re-download, but must still be read on every poll (including
-            // the notModified short-circuit below).
+            // Not part of planHash: an orientation/config-only admin change shouldn't force
+            // a content re-download, but must still be read on every poll (including the
+            // notModified short-circuit below).
             val orientation = root.optString("orientation", null)
+            val config = root.optJSONObject("config")?.let {
+                PlayerConfig(
+                    retryIntervalMs = if (it.has("retryIntervalMs")) it.getLong("retryIntervalMs") else null,
+                    transitionDurationMs = if (it.has("transitionDurationMs")) it.getLong("transitionDurationMs") else null,
+                    kioskKeyLockEnabled = if (it.has("kioskKeyLockEnabled")) it.getBoolean("kioskKeyLockEnabled") else null,
+                    downloadConnectTimeoutMs = if (it.has("downloadConnectTimeoutMs")) it.getInt("downloadConnectTimeoutMs") else null,
+                    downloadReadTimeoutMs = if (it.has("downloadReadTimeoutMs")) it.getInt("downloadReadTimeoutMs") else null,
+                )
+            }
             if (planHash != null && planHash == lastPlanHash) {
                 return FetchPlanResult(
                     rawJson = null,
@@ -76,6 +85,7 @@ class DeviceApiProvider(
                     timeline = emptyList(),
                     notModified = true,
                     orientation = orientation,
+                    config = config,
                 )
             }
             val itemsArr = root.optJSONArray("items") ?: JSONArray()
@@ -111,6 +121,7 @@ class DeviceApiProvider(
                 timeline = timeline,
                 notModified = false,
                 orientation = orientation,
+                config = config,
             )
         } finally {
             conn.disconnect()
