@@ -212,11 +212,12 @@ class PlaybackEngine(private val context: Context) {
                 player.setMediaItem(mediaItem)
                 player.prepare()
                 player.playWhenReady = true
+                startStallWatchdog(item)
                 scheduleAdvanceTimer(item)
             }
             "image" -> {
                 Glide.with(context).clear(iv)
-                Glide.with(context).load(resolvedUri).centerCrop().into(iv)
+                Glide.with(context).load(resolvedUri).fitCenter().into(iv)
                 scheduleAdvanceTimer(item)
             }
             "web" -> {
@@ -276,6 +277,7 @@ class PlaybackEngine(private val context: Context) {
     private val videoEndListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_ENDED) {
+                cancelStallWatchdog()
                 cancelAdvanceTimer()
                 reloadAndAdvance()
             }
@@ -283,10 +285,82 @@ class PlaybackEngine(private val context: Context) {
 
         override fun onPlayerError(error: PlaybackException) {
             android.util.Log.e("PlaybackEngine", "Video error ${error.errorCode}: ${error.message}")
+            cancelStallWatchdog()
+            // A decode/source error on a cached file usually means the file is bad, not the
+            // media — drop it so the next plan fetch re-downloads with a fresh hash check.
+            currentItem?.let { evictCachedCopy(it) }
             cancelAdvanceTimer()
             // Brief delay before advancing so we don't spin instantly on a broken playlist
             mainHandler.postDelayed({ reloadAndAdvance() }, 2_000)
         }
+    }
+
+    // ── Decoder stall watchdog ───────────────────────────────────────────────────
+    // A truncated video file doesn't raise onPlayerError — the decoder simply stops
+    // advancing, so the screen freezes on one frame forever and no listener fires.
+    // Poll currentPosition while a video is supposed to be playing; if it hasn't moved
+    // for STALL_TIMEOUT_MS, treat it as a corrupt cache entry: evict, report, move on.
+    private var stallRunnable: Runnable? = null
+    private var lastPositionMs = -1L
+    private var positionStuckSinceMs = 0L
+
+    /** Set when a stall is detected, so diagnostics/telemetry can surface it. */
+    var lastStallReason: String? = null
+        private set
+
+    private fun startStallWatchdog(item: PlanItem) {
+        cancelStallWatchdog()
+        lastPositionMs = -1L
+        positionStuckSinceMs = 0L
+        val tick = object : Runnable {
+            override fun run() {
+                val player = exoPlayer
+                if (player == null || !player.isPlaying) {
+                    // Buffering/paused is not a stall — reset the clock and keep watching.
+                    positionStuckSinceMs = 0L
+                    lastPositionMs = -1L
+                    mainHandler.postDelayed(this, STALL_POLL_MS)
+                    return
+                }
+                val pos = player.currentPosition
+                val now = System.currentTimeMillis()
+                if (pos != lastPositionMs) {
+                    lastPositionMs = pos
+                    positionStuckSinceMs = now
+                } else if (positionStuckSinceMs > 0 && now - positionStuckSinceMs >= STALL_TIMEOUT_MS) {
+                    val reason = "video stalled at ${pos}ms for ${(now - positionStuckSinceMs) / 1000}s: ${item.contentVersionId}"
+                    android.util.Log.e("PlaybackEngine", reason)
+                    lastStallReason = reason
+                    DevicePrefs(context).setLastStall(reason, now)
+                    cancelStallWatchdog()
+                    cancelAdvanceTimer()
+                    evictCachedCopy(item)
+                    reloadAndAdvance()
+                    return
+                } else if (positionStuckSinceMs == 0L) {
+                    positionStuckSinceMs = now
+                }
+                mainHandler.postDelayed(this, STALL_POLL_MS)
+            }
+        }
+        stallRunnable = tick
+        mainHandler.postDelayed(tick, STALL_POLL_MS)
+    }
+
+    private fun cancelStallWatchdog() {
+        stallRunnable?.let { mainHandler.removeCallbacks(it) }
+        stallRunnable = null
+    }
+
+    private fun evictCachedCopy(item: PlanItem) {
+        val sha = item.sha256 ?: return
+        val ext = item.ext ?: return
+        AssetDownloader.evictCorrupt(context, item.contentVersionId, "current", sha, ext)
+    }
+
+    private companion object {
+        const val STALL_POLL_MS    = 2_000L
+        const val STALL_TIMEOUT_MS = 10_000L
     }
 
     private fun reloadAndAdvance() {
@@ -311,6 +385,9 @@ class PlaybackEngine(private val context: Context) {
     }
 
     private fun playItem(item: PlanItem) {
+        // Liveness heartbeat: advancing to a new item proves the playback loop and UI
+        // thread are still running, which a frozen screen cannot fake.
+        DevicePrefs(context).markPlaybackAlive()
         val now = NtpSyncManager.now(context)
         currentItem?.let { emitCompleteEvent(it, now) }
         currentItem = item
@@ -360,6 +437,7 @@ class PlaybackEngine(private val context: Context) {
                 player.setMediaItem(mediaItem)
                 player.prepare()
                 player.playWhenReady = true
+                startStallWatchdog(item)
                 scheduleAdvanceTimer(item)
             }
             "image" -> {
@@ -368,7 +446,7 @@ class PlaybackEngine(private val context: Context) {
                 wv.visibility = android.view.View.GONE
 
                 Glide.with(context).clear(iv)
-                Glide.with(context).load(resolvedUri).centerCrop().into(iv)
+                Glide.with(context).load(resolvedUri).fitCenter().into(iv)
                 scheduleAdvanceTimer(item)
             }
             "web" -> {

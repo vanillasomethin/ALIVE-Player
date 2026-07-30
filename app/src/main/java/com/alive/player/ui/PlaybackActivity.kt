@@ -105,6 +105,10 @@ class PlaybackActivity : Activity() {
     private var selectPressCount = 0
     private var lastSelectPressMs = 0L
 
+    // Cached so dispatchKeyEvent never touches SharedPreferences (main thread, fires on
+    // every key press). Refreshed by the 30s plan poll below.
+    private var kioskKeyLockEnabled = true
+
     // Plan-change detection
     private var lastKnownPlanMs = 0L
     private val planPollRunnable = object : Runnable {
@@ -114,7 +118,10 @@ class PlaybackActivity : Activity() {
             // when unchanged, but picks up a remote orientation change within one poll.
             applyContentRotation()
 
-            val updatedMs = DevicePrefs(this@PlaybackActivity).getPlanUpdatedMs()
+            val prefs = DevicePrefs(this@PlaybackActivity)
+            kioskKeyLockEnabled = prefs.isKioskKeyLockEnabled()
+
+            val updatedMs = prefs.getPlanUpdatedMs()
             when {
                 lastKnownPlanMs == 0L       -> lastKnownPlanMs = updatedMs
                 updatedMs > lastKnownPlanMs -> {
@@ -583,8 +590,9 @@ class PlaybackActivity : Activity() {
                 KeyEvent.KEYCODE_APP_SWITCH ->
                     // Remote-configurable (see PlayerConfig.kioskKeyLockEnabled) so a
                     // technician can get full remote control back for debugging without
-                    // a rebuild.
-                    if (DevicePrefs(this).isKioskKeyLockEnabled()) return true
+                    // a rebuild. Read from a cached field, never from prefs — this runs on
+                    // the main thread for every single key press.
+                    if (kioskKeyLockEnabled) return true
             }
         }
         return super.dispatchKeyEvent(event)
