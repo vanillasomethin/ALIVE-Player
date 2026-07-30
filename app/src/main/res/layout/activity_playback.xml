@@ -15,7 +15,8 @@
     <FrameLayout
         android:id="@+id/content_rotator"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="match_parent"
+        android:layout_gravity="center">
 
         <androidx.media3.ui.PlayerView
             android:id="@+id/player_view"
