@@ -39,7 +39,6 @@ import com.alive.player.service.PlaybackForegroundService
 import com.alive.player.settings.DevicePrefs
 import com.alive.player.settings.FetchStatus
 import com.alive.player.settings.SettingsActivity
-import com.alive.player.worker.InAppUpdateHelper
 import com.alive.player.worker.PlanFetchScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -525,17 +524,10 @@ class PlaybackActivity : Activity() {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        InAppUpdateHelper.checkForUpdate(this)
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode == InAppUpdateHelper.REQUEST_CODE && resultCode != RESULT_OK) {
-            // Update was cancelled or failed — Play will retry on next resume
-        }
-        super.onActivityResult(requestCode, resultCode, data)
-    }
+    // Updates are delivered OTA (UpdateCheckWorker -> /api/device/update-check), not by
+    // Play Store. Play's in-app update flow was removed: these screens are unattended
+    // kiosks with no one to accept a prompt, most aren't Play-certified TVs anyway, and
+    // its IMMEDIATE flow puts a full-screen Google UI over paid ad playback.
 
     override fun onDestroy() {
         engine?.onWaiting = null

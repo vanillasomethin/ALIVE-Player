@@ -106,7 +106,8 @@ play {
 }
 
 dependencies {
-    implementation("com.google.android.play:app-update-ktx:2.1.0")
+    // Play in-app updates intentionally NOT used — these are unattended kiosks with no
+    // one to accept a prompt, and updates arrive OTA via UpdateCheckWorker instead.
 
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")

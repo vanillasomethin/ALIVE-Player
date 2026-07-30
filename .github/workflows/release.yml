@@ -45,6 +45,25 @@ jobs:
           mv app/build/outputs/apk/debug/app-debug.apk \
              app/build/outputs/apk/debug/alive-player-${{ github.run_number }}.apk
 
+      # OTA manifest published alongside the APK, so /api/device/update-check reads the
+      # release itself instead of three hand-maintained Vercel env vars. Those had to be
+      # updated by hand on every release; when they drifted the endpoint just answered
+      # "no update" and OTA silently stopped working with nothing to notice.
+      - name: Write OTA manifest
+        run: |
+          APK=app/build/outputs/apk/debug/alive-player-${{ github.run_number }}.apk
+          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
+          cat > app/build/outputs/apk/debug/latest.json <<JSON
+          {
+            "versionCode": ${{ github.run_number }},
+            "versionName": "1.0.${{ github.run_number }}",
+            "apkUrl": "https://github.com/${{ github.repository }}/releases/download/sideload-latest/alive-player-${{ github.run_number }}.apk",
+            "sha256": "$SHA",
+            "commit": "${{ github.sha }}"
+          }
+          JSON
+          echo "OTA manifest:"; cat app/build/outputs/apk/debug/latest.json
+
       - name: Create or update GitHub Release (sideload)
         uses: softprops/action-gh-release@v2
         with:
@@ -56,14 +75,20 @@ jobs:
 
             `https://github.com/${{ github.repository }}/releases/download/sideload-latest/alive-player-${{ github.run_number }}.apk`
 
-            This is a debug build intended for testing before Play Store submission.
+            Paired screens update themselves from this release via OTA — `latest.json`
+            below is the manifest `/api/device/update-check` serves to them.
             Build: `${{ github.sha }}`
-          files: app/build/outputs/apk/debug/alive-player-${{ github.run_number }}.apk
+          files: |
+            app/build/outputs/apk/debug/alive-player-${{ github.run_number }}.apk
+            app/build/outputs/apk/debug/latest.json
           prerelease: true
 
-  # ── Job 2: signed AAB — always builds; Play upload only if secret is present ─
+  # ── Job 2: signed AAB — build + archive only. Play Store publishing is disabled;
+  # updates ship OTA (see the OTA manifest step above). The AAB is still built every
+  # release so a signed artifact is always ready if Play distribution is revived, and
+  # so signing config breakage is caught here rather than at release time.
   play-store:
-    name: Build signed AAB and upload to Play Store
+    name: Build signed AAB (archive only — Play publishing disabled)
     runs-on: ubuntu-latest
 
     steps:
@@ -100,24 +125,10 @@ jobs:
           path: app/build/outputs/bundle/release/app-release.aab
           retention-days: 30
 
-      - name: Publish to Play Store
-        if: ${{ vars.PLAY_STORE_ENABLED == 'true' }}
-        env:
-          BUILD_NUMBER: ${{ github.run_number }}
-          SIGNING_STORE_FILE: ${{ github.workspace }}/release.jks
-          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-          PLAY_SERVICE_ACCOUNT_JSON: ${{ github.workspace }}/play-service-account.json
-        run: |
-          echo "${{ secrets.PLAY_SERVICE_ACCOUNT_KEY_BASE64 }}" | base64 --decode > ${{ github.workspace }}/play-service-account.json
-          ./gradlew publishReleaseBundle \
-            -Pandroid.injected.signing.store.file=$SIGNING_STORE_FILE \
-            -Pandroid.injected.signing.store.password=$SIGNING_STORE_PASSWORD \
-            -Pandroid.injected.signing.key.alias=$SIGNING_KEY_ALIAS \
-            -Pandroid.injected.signing.key.password=$SIGNING_KEY_PASSWORD \
-            --no-daemon
-
+      # Play Store publishing intentionally removed — updates ship OTA. Re-enabling it
+      # would also need the self-update code split out into a separate build flavour:
+      # Play policy forbids an app distributed through Play from updating its own APK,
+      # and this build carries REQUEST_INSTALL_PACKAGES + PackageInstaller for OTA.
       - name: Clean up secrets
         if: always()
         run: |
