@@ -417,12 +417,30 @@ class PlaybackActivity : Activity() {
                             downloadProgress.apply { visibility = View.VISIBLE; max = total; progress = done }
                             retryButton.visibility = View.GONE
                         } else {
+                            // fetchStatus only describes the network fetch, so on its own it
+                            // cannot explain why nothing is playing. statusLine carries the
+                            // playback engine's actual reason (e.g. no content for the current
+                            // time slot) — showing the generic "starting soon" instead left the
+                            // screen claiming it was about to start, forever, with the real
+                            // reason discarded. Prefer the engine's reason whenever it has one.
+                            val engineReason = statusLine
+                                .takeIf { it.isNotBlank() && !it.startsWith("Schedule loaded") }
+                                ?.lines()?.firstOrNull()?.trim()
                             waitingProgress.visibility = View.GONE
-                            statusIcon.apply { visibility = View.VISIBLE; text = "✓"; setTextColor(Color.parseColor("#22c55e")) }
-                            waitingStatus.text = "Schedule synced — starting soon"
-                            statusDetail.visibility = View.GONE
+                            statusIcon.apply {
+                                visibility = View.VISIBLE
+                                text = if (engineReason != null) "⚠" else "✓"
+                                setTextColor(Color.parseColor(if (engineReason != null) "#f59e0b" else "#22c55e"))
+                            }
+                            waitingStatus.text = engineReason ?: "Schedule synced — starting soon"
+                            if (engineReason != null) {
+                                showDetail("Check the schedule's date range and daily hours in admin")
+                                retryButton.visibility = View.VISIBLE
+                            } else {
+                                statusDetail.visibility = View.GONE
+                                retryButton.visibility = View.GONE
+                            }
                             downloadProgress.visibility = View.GONE
-                            retryButton.visibility = View.GONE
                         }
                     }
                 }
