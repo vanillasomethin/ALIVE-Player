@@ -304,25 +304,34 @@ class PlaybackActivity : Activity() {
     // reliably works instead of depending on OS-level SCREEN_ORIENTATION_REVERSE_PORTRAIT
     // support.
     private fun applyContentRotation() {
-        val screenW = resources.displayMetrics.widthPixels
-        val screenH = resources.displayMetrics.heightPixels
-        val mode = DevicePrefs(this).getOrientationMode()
-        val rotation = when (mode) {
-            DevicePrefs.ORIENTATION_PORTRAIT         -> 90f
-            DevicePrefs.ORIENTATION_REVERSE_PORTRAIT -> -90f
+        // Rotation is relative: how far the content must turn to reach the requested
+        // orientation FROM whatever the panel actually gave us. A fixed 90° was wrong
+        // because these panels are inconsistent — some report portrait natively, some
+        // landscape, and the same unit can differ between boots. Rotating blindly then
+        // lands portrait content sideways half the time.
+        val isLandscapeNow = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val rotation = when (DevicePrefs(this).getOrientationMode()) {
+            DevicePrefs.ORIENTATION_PORTRAIT         -> if (isLandscapeNow) 90f  else 0f
+            DevicePrefs.ORIENTATION_REVERSE_PORTRAIT -> if (isLandscapeNow) 270f else 180f
+            DevicePrefs.ORIENTATION_LANDSCAPE        -> if (isLandscapeNow) 0f   else 90f
             else                                     -> 0f
         }
-        if (contentRotator.rotation == rotation) return
-        contentRotator.rotation = rotation
+
+        // Quarter turns need the container's width/height swapped so its rotated
+        // bounding box covers the panel; half turns and no-ops keep the panel's own
+        // dimensions. The view is layout_gravity="center", which matters: rotation
+        // pivots about the view's centre, so a top-left-aligned container with swapped
+        // dimensions would swing its content off the edge of the screen.
+        val quarterTurn = rotation == 90f || rotation == 270f
         val lp = contentRotator.layoutParams
-        if (rotation == 0f) {
-            lp.width  = FrameLayout.LayoutParams.MATCH_PARENT
-            lp.height = FrameLayout.LayoutParams.MATCH_PARENT
-        } else {
-            // Swapped so the rotated bounding box exactly fills the physical (landscape) panel
-            lp.width  = screenH
-            lp.height = screenW
-        }
+        val wantW = if (quarterTurn) resources.displayMetrics.heightPixels else FrameLayout.LayoutParams.MATCH_PARENT
+        val wantH = if (quarterTurn) resources.displayMetrics.widthPixels  else FrameLayout.LayoutParams.MATCH_PARENT
+
+        if (contentRotator.rotation == rotation && lp.width == wantW && lp.height == wantH) return
+
+        contentRotator.rotation = rotation
+        lp.width  = wantW
+        lp.height = wantH
         contentRotator.layoutParams = lp
     }
 
@@ -505,6 +514,11 @@ class PlaybackActivity : Activity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        // The panel's own orientation just changed, so the relative content rotation and
+        // the swapped container dimensions are both stale. Recompute immediately —
+        // waiting for the 30s poll would leave content sideways in the meantime.
+        // Posted so displayMetrics reflects the new configuration, not the old one.
+        window.decorView.post { applyContentRotation() }
         // Re-apply fullscreen after orientation change (system may clear UI flags)
         window.decorView.postDelayed({ onWindowFocusChanged(true) }, 100)
     }
