@@ -39,9 +39,12 @@ jobs:
       # per density, so only the two source PNGs live in the repo. Runners ship
       # ImageMagick, so this needs no local tooling. Skipped when the artwork is absent,
       # which keeps the build green before it has been supplied.
+      # ubuntu-latest does NOT ship ImageMagick, so install it rather than assuming.
       - name: Generate launcher icons and TV banner
         run: |
           if [ -f tools/branding/alive-player-banner.png ] && [ -f tools/branding/alive-player-icon.png ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq imagemagick
             chmod +x ./tools/generate-icons.sh
             ./tools/generate-icons.sh
           else
@@ -128,6 +131,8 @@ jobs:
       - name: Generate launcher icons and TV banner
         run: |
           if [ -f tools/branding/alive-player-banner.png ] && [ -f tools/branding/alive-player-icon.png ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq imagemagick
             chmod +x ./tools/generate-icons.sh
             ./tools/generate-icons.sh
           else

@@ -51,9 +51,11 @@ for spec in "mdpi:48" "hdpi:72" "xhdpi:96" "xxhdpi:144" "xxxhdpi:192"; do
   mkdir -p "$RES/mipmap-$d"
   $IM "$ICON_SRC" -resize "${px}x${px}!" -strip "$RES/mipmap-$d/ic_launcher.png"
   # Round variant: same art, circular mask, for launchers that request it.
+  # DstIn keeps the source only where the mask is opaque, i.e. inside the circle.
+  r=$(( px / 2 ))
   $IM "$ICON_SRC" -resize "${px}x${px}!" \
-      \( +clone -alpha extract -draw "fill black polygon 0,0 0,$px $px,0 fill white circle $((px/2)),$((px/2)) $((px/2)),0" \
-         -alpha off \) -compose CopyOpacity -composite -strip \
+      \( -size "${px}x${px}" xc:none -fill white -draw "circle $r,$r $r,0" \) \
+      -alpha set -compose DstIn -composite -strip \
       "$RES/mipmap-$d/ic_launcher_round.png"
   echo "  mipmap-$d/ic_launcher{,_round}.png (${px}px)"
 done
