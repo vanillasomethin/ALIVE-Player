@@ -150,11 +150,22 @@ class DeviceApiProvider(
      * accepts an empty batch with telemetry and updates lastSeen/status=ONLINE.
      * Throws on failure so callers (HeartbeatWorker) can retry.
      */
-    fun sendHeartbeat(deviceToken: String, freeStorageMb: Long? = null) {
+    fun sendHeartbeat(
+        deviceToken: String,
+        freeStorageMb: Long? = null,
+        playbackAliveMs: Long? = null,
+        lastStallReason: String? = null,
+        lastStallMs: Long? = null,
+    ) {
         val telemetry = JSONObject()
             .put("appVersion", com.alive.player.BuildConfig.VERSION_NAME)
             .put("androidVersion", android.os.Build.VERSION.RELEASE ?: "")
         if (freeStorageMb != null) telemetry.put("freeStorageMb", freeStorageMb)
+        // Freeze diagnostics: a frozen screen still heartbeats, so lastSeen alone can't
+        // detect it. playbackAliveMs is the last time content actually advanced.
+        if (playbackAliveMs != null && playbackAliveMs > 0) telemetry.put("playbackAliveMs", playbackAliveMs)
+        if (!lastStallReason.isNullOrBlank()) telemetry.put("lastStallReason", lastStallReason)
+        if (lastStallMs != null && lastStallMs > 0) telemetry.put("lastStallMs", lastStallMs)
         val payload = JSONObject()
             .put("events", JSONArray())
             .put("telemetry", telemetry)

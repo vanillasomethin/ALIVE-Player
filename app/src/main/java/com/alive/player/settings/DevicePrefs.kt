@@ -4,20 +4,24 @@ import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
-class DevicePrefs(context: Context) {
-    private val masterKey = MasterKey.Builder(context)
-        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-        .build()
+class DevicePrefs(private val context: Context) {
+    /**
+     * Lazy, and process-wide cached, because building it is genuinely expensive:
+     * MasterKey.Builder().build() hits the Android Keystore and
+     * EncryptedSharedPreferences.create() does crypto plus file I/O. DevicePrefs is
+     * constructed on hot paths — every remote key press, every countdown tick, every
+     * media item — and doing keystore work there wedges the main thread on slow TV
+     * hardware (blank screen, remote stops responding).
+     *
+     * Only the credential accessors below touch this. Everything else (orientation,
+     * remote config, diagnostics, fetch status) lives in the plain [statusPrefs], so
+     * those reads never pay the keystore cost at all.
+     */
+    private val prefs: android.content.SharedPreferences
+        get() = encrypted(context)
 
-    private val prefs = EncryptedSharedPreferences.create(
-        context,
-        PREFS_NAME,
-        masterKey,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-    )
-
-    // Plain prefs for non-sensitive diagnostic state
+    // Plain prefs for non-sensitive diagnostic state. getSharedPreferences is itself
+    // cached by the framework, so this stays cheap.
     private val statusPrefs = context.getSharedPreferences(STATUS_PREFS_NAME, Context.MODE_PRIVATE)
 
     /**
@@ -120,12 +124,50 @@ class DevicePrefs(context: Context) {
     fun setDownloadReadTimeoutMs(ms: Int) { statusPrefs.edit().putInt(KEY_DL_READ_TIMEOUT_MS, ms).apply() }
     fun getDownloadReadTimeoutMs(): Int = statusPrefs.getInt(KEY_DL_READ_TIMEOUT_MS, DEFAULT_DL_READ_TIMEOUT_MS)
 
+    // ── Diagnostics ────────────────────────────────────────────────────────────────
+
+    /** Last detected playback stall (decoder froze). Surfaced in telemetry + diag overlay. */
+    fun setLastStall(reason: String, atEpochMs: Long) {
+        statusPrefs.edit()
+            .putString(KEY_LAST_STALL, reason)
+            .putLong(KEY_LAST_STALL_MS, atEpochMs)
+            .apply()
+    }
+
+    fun getLastStall(): Pair<String, Long>? {
+        val reason = statusPrefs.getString(KEY_LAST_STALL, null) ?: return null
+        return reason to statusPrefs.getLong(KEY_LAST_STALL_MS, 0L)
+    }
+
+    /** Heartbeat written by the playback loop — proves the UI thread is still advancing. */
+    fun markPlaybackAlive() {
+        statusPrefs.edit().putLong(KEY_PLAYBACK_ALIVE_MS, System.currentTimeMillis()).apply()
+    }
+
+    fun getPlaybackAliveMs(): Long = statusPrefs.getLong(KEY_PLAYBACK_ALIVE_MS, 0L)
+
     fun clearAll() {
         prefs.edit().clear().apply()
         statusPrefs.edit().clear().apply()
     }
 
     companion object {
+        /** Built once per process; see the [prefs] kdoc for why this must not be per-instance. */
+        @Volatile private var encryptedInstance: android.content.SharedPreferences? = null
+
+        private fun encrypted(context: Context): android.content.SharedPreferences =
+            encryptedInstance ?: synchronized(this) {
+                encryptedInstance ?: EncryptedSharedPreferences.create(
+                    context.applicationContext,
+                    PREFS_NAME,
+                    MasterKey.Builder(context.applicationContext)
+                        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                        .build(),
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+                ).also { encryptedInstance = it }
+            }
+
         private const val PREFS_NAME          = "alive_player_prefs"
         private const val STATUS_PREFS_NAME   = "alive_player_status"
         private const val KEY_DEVICE_TOKEN    = "device_token"
@@ -144,6 +186,9 @@ class DevicePrefs(context: Context) {
         private const val KEY_KIOSK_KEY_LOCK         = "cfg_kiosk_key_lock"
         private const val KEY_DL_CONNECT_TIMEOUT_MS  = "cfg_dl_connect_timeout_ms"
         private const val KEY_DL_READ_TIMEOUT_MS     = "cfg_dl_read_timeout_ms"
+        private const val KEY_LAST_STALL             = "diag_last_stall"
+        private const val KEY_LAST_STALL_MS          = "diag_last_stall_ms"
+        private const val KEY_PLAYBACK_ALIVE_MS      = "diag_playback_alive_ms"
 
         private const val DEFAULT_RETRY_INTERVAL_MS      = 30_000L
         private const val DEFAULT_TRANSITION_DURATION_MS = 600L
