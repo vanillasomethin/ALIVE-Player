@@ -93,6 +93,15 @@ class PlaybackEngine(private val context: Context) {
         infos.filterNot { it.name in DecoderCapabilities.BROKEN_HARDWARE_DECODER_NAMES }
     }
 
+    /**
+     * Reports where the current item's bytes came from: true when served from the local
+     * cache, false when falling back to streaming the remote URL. Surfaced on screen
+     * because the two are indistinguishable otherwise, and the difference decides whether
+     * a screen survives losing its connection — a screen that looks fine but is actually
+     * streaming will go black the moment the network drops.
+     */
+    var onSourceChanged: ((local: Boolean) -> Unit)? = null
+
     fun attachViews(playerView: PlayerView, imageView: ImageView, webView: WebView) {
         this.playerView = playerView
         this.imageView = imageView
@@ -215,6 +224,7 @@ class PlaybackEngine(private val context: Context) {
             }
         }
         val resolvedUri = if (localFile != null) android.net.Uri.fromFile(localFile) else android.net.Uri.parse(item.uri)
+        onSourceChanged?.invoke(localFile != null)
 
         val newView: View = when (item.type) {
             "video" -> pv
@@ -481,6 +491,7 @@ class PlaybackEngine(private val context: Context) {
             }
         }
         val resolvedUri = if (localFile != null) android.net.Uri.fromFile(localFile) else android.net.Uri.parse(item.uri)
+        onSourceChanged?.invoke(localFile != null)
 
         when (item.type) {
             "video" -> {

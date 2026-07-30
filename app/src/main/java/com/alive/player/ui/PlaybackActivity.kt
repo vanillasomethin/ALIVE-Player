@@ -193,10 +193,13 @@ class PlaybackActivity : Activity() {
             eng.onWaiting = { statusLine ->
                 waitingOverlay.visibility = View.VISIBLE
                 updateStatusCard(statusLine)
+                refreshStatusBadge()
             }
             eng.onPlaying = {
                 waitingOverlay.visibility = View.GONE
+                refreshStatusBadge()
             }
+            eng.onSourceChanged = { local -> runOnUiThread { setPlaybackSource(local) } }
 
             eng.attachViews(playerView, imageView, webView)
             bound = true
@@ -364,8 +367,36 @@ class PlaybackActivity : Activity() {
             setColor(dotColor)
         }
         networkLabel.text = if (online) "ONLINE" else "OFFLINE"
-        offlineBadge.visibility =
-            if (online || waitingOverlay.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        isOnline = online
+        refreshStatusBadge()
+    }
+
+    // Whether the item on screen is served from the local cache. Tracked alongside network
+    // state because the pair is what actually matters in the field: cached + offline is
+    // healthy and expected, whereas streaming + offline is about to go black.
+    private var isOnline = true
+    private var playingFromCache: Boolean? = null
+
+    private fun setPlaybackSource(local: Boolean) {
+        playingFromCache = local
+        refreshStatusBadge()
+    }
+
+    private fun refreshStatusBadge() {
+        // Nothing to report over the waiting overlay — it already explains itself.
+        if (waitingOverlay.visibility == View.VISIBLE) {
+            offlineBadge.visibility = View.GONE
+            return
+        }
+        val cached = playingFromCache
+        val text = when {
+            !isOnline && cached == true  -> "● OFFLINE · PLAYING FROM CACHE"
+            !isOnline                    -> "● OFFLINE · STREAMING"
+            cached == false              -> "● STREAMING (NOT CACHED)"
+            else                         -> null // online and cached: the normal case, stay out of the way
+        }
+        offlineBadge.text = text ?: ""
+        offlineBadge.visibility = if (text != null) View.VISIBLE else View.GONE
     }
 
     private fun updateStatusCard(statusLine: String) {
@@ -567,6 +598,7 @@ class PlaybackActivity : Activity() {
     override fun onDestroy() {
         engine?.onWaiting = null
         engine?.onPlaying = null
+        engine?.onSourceChanged = null
         engine?.detachViews()
         if (bound) {
             unbindService(connection)
