@@ -41,8 +41,9 @@ class PlanFetchWorker(
             // the plan content changed. AUTO/unset means "defer to the on-device 5-tap
             // rotate control" -- only an explicit choice overrides the local preference.
             when (result.orientation?.uppercase()) {
-                "PORTRAIT"  -> prefs.setOrientationMode(DevicePrefs.ORIENTATION_PORTRAIT)
-                "LANDSCAPE" -> prefs.setOrientationMode(DevicePrefs.ORIENTATION_LANDSCAPE)
+                "PORTRAIT"         -> prefs.setOrientationMode(DevicePrefs.ORIENTATION_PORTRAIT)
+                "PORTRAIT_FLIPPED" -> prefs.setOrientationMode(DevicePrefs.ORIENTATION_REVERSE_PORTRAIT)
+                "LANDSCAPE"        -> prefs.setOrientationMode(DevicePrefs.ORIENTATION_LANDSCAPE)
             }
 
             // Same reasoning as orientation: fleet-wide behavior knobs aren't part of

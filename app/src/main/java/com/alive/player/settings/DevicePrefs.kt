@@ -92,8 +92,15 @@ class DevicePrefs(private val context: Context) {
         statusPrefs.edit().putString(KEY_ORIENTATION, mode).apply()
     }
 
+    /**
+     * Portrait is the standard ALIVE mount, so it is the hardcoded default — a freshly
+     * flashed screen renders portrait before it has ever talked to the server. The
+     * server's Device.orientation still overrides this on the first plan fetch, and the
+     * on-device rotate control flips between portrait and portrait-flipped for panels
+     * mounted the other way up.
+     */
     fun getOrientationMode(): String =
-        statusPrefs.getString(KEY_ORIENTATION, ORIENTATION_DEFAULT) ?: ORIENTATION_DEFAULT
+        statusPrefs.getString(KEY_ORIENTATION, ORIENTATION_PORTRAIT) ?: ORIENTATION_PORTRAIT
 
     fun setFcmToken(token: String) {
         statusPrefs.edit().putString(KEY_FCM_TOKEN, token).apply()
