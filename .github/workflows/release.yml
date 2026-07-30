@@ -35,6 +35,21 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
+      # Icons are generated at build time from the source artwork rather than committed
+      # per density, so only the two source PNGs live in the repo. Runners ship
+      # ImageMagick, so this needs no local tooling. Skipped when the artwork is absent,
+      # which keeps the build green before it has been supplied.
+      - name: Generate launcher icons and TV banner
+        run: |
+          if [ -f tools/branding/alive-player-banner.png ] && [ -f tools/branding/alive-player-icon.png ]; then
+            chmod +x ./tools/generate-icons.sh
+            ./tools/generate-icons.sh
+          else
+            echo "No branding artwork in tools/branding/ — keeping current icons."
+            echo "Add alive-player-banner.png (16:9) and alive-player-icon.png (square);"
+            echo "see tools/branding/README.md."
+          fi
+
       - name: Build debug APK
         env:
           BUILD_NUMBER: ${{ github.run_number }}
@@ -108,6 +123,16 @@ jobs:
 
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
+
+      # Same generation as the debug job, so both artifacts carry identical icons.
+      - name: Generate launcher icons and TV banner
+        run: |
+          if [ -f tools/branding/alive-player-banner.png ] && [ -f tools/branding/alive-player-icon.png ]; then
+            chmod +x ./tools/generate-icons.sh
+            ./tools/generate-icons.sh
+          else
+            echo "No branding artwork in tools/branding/ — keeping current icons."
+          fi
 
       - name: Build signed release AAB
         env:
