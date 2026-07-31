@@ -378,6 +378,7 @@ class PlaybackActivity : Activity() {
                 showDetail("wearealive.in/admin → assign a schedule")
                 downloadProgress.visibility = View.GONE
                 retryButton.visibility = View.VISIBLE
+                retryButton.requestFocus()
             }
             FetchStatus.ERROR.name -> {
                 waitingProgress.visibility = View.GONE
@@ -386,6 +387,7 @@ class PlaybackActivity : Activity() {
                 showDetail(fetchStatus.message.take(80).ifBlank { "Unknown error" })
                 downloadProgress.visibility = View.GONE
                 retryButton.visibility = View.VISIBLE
+                retryButton.requestFocus()
             }
             FetchStatus.FETCHING.name -> {
                 waitingProgress.visibility = View.VISIBLE
@@ -436,6 +438,7 @@ class PlaybackActivity : Activity() {
                             if (engineReason != null) {
                                 showDetail("Check the schedule's date range and daily hours in admin")
                                 retryButton.visibility = View.VISIBLE
+                                retryButton.requestFocus()
                             } else {
                                 statusDetail.visibility = View.GONE
                                 retryButton.visibility = View.GONE

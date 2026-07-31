@@ -24,14 +24,15 @@
             android:layout_height="match_parent"
             android:visibility="gone"
             app:use_controller="false"
-            app:resize_mode="fit" />
+            app:resize_mode="fit"
+            app:surface_type="texture_view" />
 
         <ImageView
             android:id="@+id/image_view"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:visibility="gone"
-            android:scaleType="fitCenter" />
+            android:scaleType="centerCrop" />
 
         <WebView
             android:id="@+id/web_view"

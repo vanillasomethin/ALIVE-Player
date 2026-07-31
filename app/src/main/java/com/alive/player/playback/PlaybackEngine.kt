@@ -10,7 +10,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.ui.PlayerView
 import com.alive.player.data.AppDatabase
 import com.alive.player.data.ProofEvent
@@ -59,13 +61,27 @@ class PlaybackEngine(private val context: Context) {
     /** Called when the engine begins rendering content. */
     var onPlaying: (() -> Unit)? = null
 
+    // Some Hisilicon Android TV boxes ship an OMX.hisi.video.decoder.avc that accepts
+    // input but never drains its output buffers -- MediaCodec logs show the decoder
+    // stuck holding 6-9/9 output buffers and repeatedly flush()/start() every few
+    // hundred ms to a few seconds, with no ExoPlayer error and a permanently blank
+    // screen. Confirmed independent of encoding (profile/level/bitrate/CFR all
+    // within spec) and independent of PlayerView's surface type (same behavior with
+    // TextureView) -- the bug is in the vendor decoder itself. Excluding it here
+    // forces MediaCodecSelector.DEFAULT's next candidate (a software AVC decoder),
+    // trading CPU/power efficiency for actually rendering frames.
+    private val safeMediaCodecSelector = MediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
+        val infos = MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, requiresSecureDecoder, requiresTunnelingDecoder)
+        infos.filterNot { it.name.contains("hisi", ignoreCase = true) }
+    }
+
     fun attachViews(playerView: PlayerView, imageView: ImageView, webView: WebView) {
         this.playerView = playerView
         this.imageView = imageView
         this.webView = webView
 
         if (exoPlayer == null) {
-            exoPlayer = ExoPlayer.Builder(context).build()
+            exoPlayer = ExoPlayer.Builder(context, DefaultRenderersFactory(context).setMediaCodecSelector(safeMediaCodecSelector)).build()
         }
         playerView.player = exoPlayer
 
@@ -192,10 +208,19 @@ class PlaybackEngine(private val context: Context) {
 
         when (item.type) {
             "video" -> {
-                val player = exoPlayer ?: return
                 cancelAdvanceTimer()
-                player.clearMediaItems()
-                player.removeListener(videoEndListener)
+                // Rebuilt fresh per item rather than reusing one ExoPlayer instance for the
+                // whole app lifetime: on this Foxsky/Hisilicon device, if the codec pipeline
+                // gets into a bad state once (output buffers never drained, decoder stuck
+                // flushing/restarting), the SAME instance never recovers for any later item
+                // either. A fresh instance gets a fresh MediaCodec/Surface handshake each time.
+                exoPlayer?.let { old ->
+                    old.removeListener(videoEndListener)
+                    old.release()
+                }
+                val player = ExoPlayer.Builder(context, DefaultRenderersFactory(context).setMediaCodecSelector(safeMediaCodecSelector)).build()
+                exoPlayer = player
+                playerView?.player = player
                 player.addListener(videoEndListener)
                 val mimeType = when (item.ext?.lowercase()) {
                     "mp4"  -> MimeTypes.VIDEO_MP4
@@ -217,7 +242,7 @@ class PlaybackEngine(private val context: Context) {
             }
             "image" -> {
                 Glide.with(context).clear(iv)
-                Glide.with(context).load(resolvedUri).fitCenter().into(iv)
+                Glide.with(context).load(resolvedUri).centerCrop().into(iv)
                 scheduleAdvanceTimer(item)
             }
             "web" -> {
@@ -446,7 +471,7 @@ class PlaybackEngine(private val context: Context) {
                 wv.visibility = android.view.View.GONE
 
                 Glide.with(context).clear(iv)
-                Glide.with(context).load(resolvedUri).fitCenter().into(iv)
+                Glide.with(context).load(resolvedUri).centerCrop().into(iv)
                 scheduleAdvanceTimer(item)
             }
             "web" -> {
