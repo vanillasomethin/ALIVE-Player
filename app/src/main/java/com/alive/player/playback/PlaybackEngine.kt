@@ -253,7 +253,7 @@ class PlaybackEngine(private val context: Context) {
             }
             "image" -> {
                 Glide.with(context).clear(iv)
-                Glide.with(context).load(resolvedUri).fitCenter().into(iv)
+                Glide.with(context).load(resolvedUri).centerCrop().into(iv)
                 scheduleAdvanceTimer(item)
             }
             "web" -> {
@@ -482,7 +482,7 @@ class PlaybackEngine(private val context: Context) {
                 wv.visibility = android.view.View.GONE
 
                 Glide.with(context).clear(iv)
-                Glide.with(context).load(resolvedUri).fitCenter().into(iv)
+                Glide.with(context).load(resolvedUri).centerCrop().into(iv)
                 scheduleAdvanceTimer(item)
             }
             "web" -> {
