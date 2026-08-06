@@ -18,14 +18,19 @@
         android:layout_height="match_parent"
         android:layout_gravity="center">
 
+        <!-- INVISIBLE, not GONE: a GONE view is never laid out, so its TextureView never
+             gets a valid, sized Surface for ExoPlayer to render into. See
+             PlaybackEngine.transitionViews() for how this is kept true for its whole
+             lifecycle (toggled VISIBLE/INVISIBLE, never GONE, once attached). -->
         <androidx.media3.ui.PlayerView
             android:id="@+id/player_view"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:visibility="gone"
+            android:visibility="invisible"
             app:use_controller="false"
             app:resize_mode="fit"
-            app:surface_type="texture_view" />
+            app:surface_type="texture_view"
+            app:keep_content_on_player_reset="true" />
 
         <ImageView
             android:id="@+id/image_view"

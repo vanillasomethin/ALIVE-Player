@@ -52,6 +52,14 @@ class PlaybackEngine(private val context: Context) {
 
     private var pendingItem: PlanItem? = null
 
+    // Set right before ExoPlayer.prepare() for a video item; consumed by
+    // videoEndListener.onRenderedFirstFrame() so the view swap only happens once there's
+    // an actual decoded frame to show. Revealing playerView any earlier exposes its
+    // default black shutter for however long prepare()/decode takes -- keeping whatever
+    // was on screen before is strictly better than a guaranteed blank flash.
+    private var pendingOldView: View? = null
+    private var pendingNewView: View? = null
+
     private var currentWindowIndex: Int = 0
     private var currentItemIndex: Int = 0
 
@@ -261,20 +269,34 @@ class PlaybackEngine(private val context: Context) {
                 player.playWhenReady = true
                 startStallWatchdog(item)
                 scheduleAdvanceTimer(item)
+                pendingOldView = oldView
+                pendingNewView = newView
+                android.util.Log.d("PlaybackEngine", "VERIFY prepare() called for ${item.contentVersionId}, pendingNewView=$pendingNewView")
+                player.addListener(object : Player.Listener {
+                    override fun onRenderedFirstFrame() {
+                        android.util.Log.d("PlaybackEngine", "VERIFY direct-listener onRenderedFirstFrame fired")
+                    }
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        android.util.Log.d("PlaybackEngine", "VERIFY state=$playbackState (1=IDLE,2=BUFFERING,3=READY,4=ENDED)")
+                    }
+                    override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                        android.util.Log.d("PlaybackEngine", "VERIFY onVideoSizeChanged ${videoSize.width}x${videoSize.height}")
+                    }
+                })
             }
             "image" -> {
                 Glide.with(context).clear(iv)
                 Glide.with(context).load(resolvedUri).centerCrop().into(iv)
                 scheduleAdvanceTimer(item)
+                transitionViews(oldView, newView)
             }
             "web" -> {
                 wv.settings.javaScriptEnabled = false
                 wv.loadUrl(item.uri)
                 scheduleAdvanceTimer(item)
+                transitionViews(oldView, newView)
             }
         }
-
-        transitionViews(oldView, newView)
     }
 
     /**
@@ -289,6 +311,12 @@ class PlaybackEngine(private val context: Context) {
             newView.translationX = 0f
             return
         }
+        // playerView must never go fully GONE once laid out: a GONE view is skipped by
+        // layout entirely, so its TextureView never gets a valid, sized Surface -- a
+        // later video's ExoPlayer would then have nowhere to render a frame, and
+        // onRenderedFirstFrame (see videoEndListener) would never fire again, permanently
+        // stuck. INVISIBLE keeps it laid out (and its Surface alive) while still hidden.
+        val hiddenVisibility = if (oldView === playerView) android.view.View.INVISIBLE else android.view.View.GONE
         val durationMs = DevicePrefs(context).getTransitionDurationMs()
         when (currentTransition) {
             "FADE" -> {
@@ -297,7 +325,7 @@ class PlaybackEngine(private val context: Context) {
                 newView.visibility = android.view.View.VISIBLE
                 newView.animate().alpha(1f).setDuration(durationMs).start()
                 oldView?.animate()?.alpha(0f)?.setDuration(durationMs)?.withEndAction {
-                    oldView.visibility = android.view.View.GONE
+                    oldView.visibility = hiddenVisibility
                     oldView.alpha = 1f
                 }?.start()
             }
@@ -308,12 +336,12 @@ class PlaybackEngine(private val context: Context) {
                 newView.visibility = android.view.View.VISIBLE
                 newView.animate().translationX(0f).setDuration(durationMs).start()
                 oldView?.animate()?.translationX(-w)?.setDuration(durationMs)?.withEndAction {
-                    oldView.visibility = android.view.View.GONE
+                    oldView.visibility = hiddenVisibility
                     oldView.translationX = 0f
                 }?.start()
             }
             else -> {
-                oldView?.visibility = android.view.View.GONE
+                oldView?.visibility = hiddenVisibility
                 newView.alpha = 1f
                 newView.translationX = 0f
                 newView.visibility = android.view.View.VISIBLE
@@ -322,6 +350,14 @@ class PlaybackEngine(private val context: Context) {
     }
 
     private val videoEndListener = object : Player.Listener {
+        override fun onRenderedFirstFrame() {
+            val old = pendingOldView
+            val new = pendingNewView ?: return
+            pendingOldView = null
+            pendingNewView = null
+            transitionViews(old, new)
+        }
+
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_ENDED) {
                 cancelStallWatchdog()
@@ -333,6 +369,8 @@ class PlaybackEngine(private val context: Context) {
         override fun onPlayerError(error: PlaybackException) {
             android.util.Log.e("PlaybackEngine", "Video error ${error.errorCode}: ${error.message}")
             cancelStallWatchdog()
+            pendingOldView = null
+            pendingNewView = null
             // A decode/source error on a cached file usually means the file is bad, not the
             // media — drop it so the next plan fetch re-downloads with a fresh hash check.
             currentItem?.let { evictCachedCopy(it) }
@@ -460,10 +498,6 @@ class PlaybackEngine(private val context: Context) {
 
         when (item.type) {
             "video" -> {
-                pv.visibility = android.view.View.VISIBLE
-                iv.visibility = android.view.View.GONE
-                wv.visibility = android.view.View.GONE
-
                 val player = exoPlayer ?: return
                 cancelAdvanceTimer()
                 player.clearMediaItems()
@@ -486,6 +520,9 @@ class PlaybackEngine(private val context: Context) {
                 player.playWhenReady = true
                 startStallWatchdog(item)
                 scheduleAdvanceTimer(item)
+                // Same first-frame gating as renderItem() -- see videoEndListener.onRenderedFirstFrame().
+                pendingOldView = listOf(pv, iv, wv).firstOrNull { it !== pv && it.visibility == android.view.View.VISIBLE }
+                pendingNewView = pv
             }
             "image" -> {
                 pv.visibility = android.view.View.GONE

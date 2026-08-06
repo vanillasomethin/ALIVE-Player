@@ -3,11 +3,14 @@ package com.alive.player.worker
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.provider.Settings
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.alive.player.data.AppDatabase
 import com.alive.player.data.PlanCache
+import com.alive.player.network.ApiHttpException
 import com.alive.player.network.DeviceApiProvider
+import com.alive.player.network.FetchPlanResult
 import com.alive.player.playback.DecoderCapabilities
 import com.alive.player.settings.DevicePrefs
 import com.alive.player.settings.FetchStatus
@@ -35,7 +38,7 @@ class PlanFetchWorker(
         prefs.setFetchStatus(FetchStatus.FETCHING.also { it.message = "Contacting server…" })
 
         return@withContext try {
-            val result = DeviceApiProvider().fetchPlan(token, lastPlanHash)
+            val result = fetchPlanWithReclaim(prefs, token, lastPlanHash)
 
             // Admin-assigned orientation isn't part of planHash (it shouldn't force a
             // content re-download), so apply it on every successful fetch, not just when
@@ -122,6 +125,38 @@ class PlanFetchWorker(
             val msg = ex.message?.take(120) ?: ex.javaClass.simpleName
             prefs.setFetchStatus(FetchStatus.ERROR.also { it.message = msg })
             if (runAttemptCount < 3) Result.retry() else Result.success()
+        }
+    }
+
+    /** See [PopUploadWorker.reclaimToken] — same 401/403 re-claim recovery, applied here
+     *  to plan fetches so a rotated token doesn't stall schedule updates indefinitely. */
+    private fun fetchPlanWithReclaim(prefs: DevicePrefs, token: String, lastPlanHash: String?): FetchPlanResult =
+        try {
+            DeviceApiProvider().fetchPlan(token, lastPlanHash)
+        } catch (ex: ApiHttpException) {
+            if (ex.code == 401 || ex.code == 403) {
+                val newToken = reclaimToken(prefs) ?: throw ex
+                DeviceApiProvider().fetchPlan(newToken, lastPlanHash)
+            } else {
+                throw ex
+            }
+        }
+
+    private fun reclaimToken(prefs: DevicePrefs): String? {
+        val hardwareKey = Settings.Secure.getString(
+            applicationContext.contentResolver, Settings.Secure.ANDROID_ID
+        ) ?: return null
+        return try {
+            val response = DeviceApiProvider().claimDevice(hardwareKey)
+            if (response.pairingCode.isNotEmpty()) {
+                prefs.storePairingPending(response.token, response.deviceId, response.pairingCode)
+                null
+            } else {
+                prefs.storePairing(response.token, response.deviceId)
+                response.token
+            }
+        } catch (ex: Exception) {
+            null
         }
     }
 

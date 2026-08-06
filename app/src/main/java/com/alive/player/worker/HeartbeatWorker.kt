@@ -1,8 +1,10 @@
 package com.alive.player.worker
 
 import android.content.Context
+import android.provider.Settings
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.alive.player.network.ApiHttpException
 import com.alive.player.network.DeviceApiProvider
 import com.alive.player.settings.DevicePrefs
 
@@ -13,18 +15,47 @@ class HeartbeatWorker(
     override suspend fun doWork(): Result {
         val prefs = DevicePrefs(applicationContext)
         val token = prefs.getDeviceToken() ?: return Result.failure()
+        val stall = prefs.getLastStall()
+        fun heartbeat(tok: String) = DeviceApiProvider().sendHeartbeat(
+            deviceToken     = tok,
+            freeStorageMb   = freeStorageMb(),
+            playbackAliveMs = prefs.getPlaybackAliveMs(),
+            lastStallReason = stall?.first,
+            lastStallMs     = stall?.second,
+        )
         return try {
-            val stall = prefs.getLastStall()
-            DeviceApiProvider().sendHeartbeat(
-                deviceToken     = token,
-                freeStorageMb   = freeStorageMb(),
-                playbackAliveMs = prefs.getPlaybackAliveMs(),
-                lastStallReason = stall?.first,
-                lastStallMs     = stall?.second,
-            )
+            try {
+                heartbeat(token)
+            } catch (ex: ApiHttpException) {
+                // See PopUploadWorker.reclaimToken — 401/403 means the token was rotated
+                // (e.g. admin re-paired this device), so re-claim and retry once.
+                if (ex.code == 401 || ex.code == 403) {
+                    heartbeat(reclaimToken(prefs) ?: throw ex)
+                } else {
+                    throw ex
+                }
+            }
             Result.success()
         } catch (ex: Exception) {
             Result.retry()
+        }
+    }
+
+    private fun reclaimToken(prefs: DevicePrefs): String? {
+        val hardwareKey = Settings.Secure.getString(
+            applicationContext.contentResolver, Settings.Secure.ANDROID_ID
+        ) ?: return null
+        return try {
+            val response = DeviceApiProvider().claimDevice(hardwareKey)
+            if (response.pairingCode.isNotEmpty()) {
+                prefs.storePairingPending(response.token, response.deviceId, response.pairingCode)
+                null
+            } else {
+                prefs.storePairing(response.token, response.deviceId)
+                response.token
+            }
+        } catch (ex: Exception) {
+            null
         }
     }
 
