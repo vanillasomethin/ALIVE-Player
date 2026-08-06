@@ -98,6 +98,8 @@ class DeviceApiProvider(
                     type = o.getString("type"),
                     durationMs = o.getLong("durationMs"),
                     order = o.getInt("order"),
+                    hevcUrl = o.optString("hevcUrl", null),
+                    hevcMd5 = o.optString("hevcMd5", null),
                 )
             }
             val items = parseItems(root.optJSONArray("items") ?: JSONArray())

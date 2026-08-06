@@ -10,6 +10,8 @@ data class StudioPlanItem(
     val type: String,       // "IMAGE" or "VIDEO"
     val durationMs: Long,
     val order: Int,
+    val hevcUrl: String? = null, // optional HEVC rendition -- see DecoderCapabilities.preferHevc()
+    val hevcMd5: String? = null,
 )
 
 data class StudioTimelineSlot(

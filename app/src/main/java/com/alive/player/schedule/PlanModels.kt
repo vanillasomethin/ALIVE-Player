@@ -1,5 +1,6 @@
 package com.alive.player.schedule
 
+import com.alive.player.playback.DecoderCapabilities
 import org.json.JSONObject
 
 data class PlanWindow(val startEpochMs: Long, val endEpochMs: Long, val items: List<PlanItem>)
@@ -29,6 +30,22 @@ private fun extFromUrl(url: String): String? {
 private fun isoToEpochMs(iso: String): Long =
     java.time.Instant.parse(iso).toEpochMilli()
 
+// Mirrors the rendition choice PlanFetchWorker makes when downloading, so the file
+// AssetDownloader resolves for playback (keyed by contentId + this md5) is the one
+// that actually got downloaded. DecoderCapabilities.preferHevc() is a pure function of
+// the device's codec list, so both call sites always agree without any shared state.
+private fun resolveRendition(o: JSONObject, type: String): Pair<String, String?> {
+    val hevcUrl = o.optString("hevcUrl", null)
+    val hevcMd5 = o.optString("hevcMd5", null)
+    val useHevc = type == "video" && !hevcUrl.isNullOrBlank() && !hevcMd5.isNullOrBlank() &&
+        DecoderCapabilities.preferHevc()
+    return if (useHevc) {
+        hevcUrl to hevcMd5
+    } else {
+        o.getString("url") to o.optString("md5", null).takeIf { !it.isNullOrBlank() }
+    }
+}
+
 fun parsePlan(json: String): Plan {
     val root = JSONObject(json)
 
@@ -42,14 +59,14 @@ fun parsePlan(json: String): Plan {
         val items = buildList {
             for (i in 0 until itemsArr.length()) {
                 val o = itemsArr.getJSONObject(i)
-                val url  = o.getString("url")
                 val type = o.getString("type").lowercase()
+                val (url, md5) = resolveRendition(o, type)
                 add(PlanItem(
                     contentVersionId = o.getString("contentId"),
                     durationMs = o.getLong("durationMs"),
                     type = type,
                     uri = url,
-                    sha256 = o.optString("md5", null).takeIf { !it.isNullOrBlank() },
+                    sha256 = md5,
                     ext = extFromUrl(url) ?: when (type) {
                         "video" -> "mp4"
                         "image" -> "jpg"
@@ -79,14 +96,14 @@ fun parsePlan(json: String): Plan {
         val fallbackItems = if (fallbackArr != null && fallbackArr.length() > 0) buildList {
             for (i in 0 until fallbackArr.length()) {
                 val o = fallbackArr.getJSONObject(i)
-                val url  = o.getString("url")
                 val type = o.getString("type").lowercase()
+                val (url, md5) = resolveRendition(o, type)
                 add(PlanItem(
                     contentVersionId = o.getString("contentId"),
                     durationMs = o.getLong("durationMs"),
                     type = type,
                     uri = url,
-                    sha256 = o.optString("md5", null).takeIf { !it.isNullOrBlank() },
+                    sha256 = md5,
                     ext = extFromUrl(url) ?: when (type) {
                         "video" -> "mp4"
                         "image" -> "jpg"

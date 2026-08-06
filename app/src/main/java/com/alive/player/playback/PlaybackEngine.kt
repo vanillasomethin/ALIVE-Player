@@ -61,18 +61,29 @@ class PlaybackEngine(private val context: Context) {
     /** Called when the engine begins rendering content. */
     var onPlaying: (() -> Unit)? = null
 
-    // Some Hisilicon Android TV boxes ship an OMX.hisi.video.decoder.avc that accepts
-    // input but never drains its output buffers -- MediaCodec logs show the decoder
-    // stuck holding 6-9/9 output buffers and repeatedly flush()/start() every few
-    // hundred ms to a few seconds, with no ExoPlayer error and a permanently blank
-    // screen. Confirmed independent of encoding (profile/level/bitrate/CFR all
-    // within spec) and independent of PlayerView's surface type (same behavior with
-    // TextureView) -- the bug is in the vendor decoder itself. Excluding it here
-    // forces MediaCodecSelector.DEFAULT's next candidate (a software AVC decoder),
-    // trading CPU/power efficiency for actually rendering frames.
+    // Some vendor hardware AVC decoders on budget Android TV boxes are unreliable with
+    // modern Media3 regardless of source encoding:
+    //  - Hisilicon (OMX.hisi.video.decoder.avc): accepts input but never drains output
+    //    buffers -- stuck holding 6-9/9 output buffers, repeated flush()/start(), no
+    //    ExoPlayer error, permanently blank screen. Confirmed independent of encoding
+    //    (profile/level/bitrate/CFR all within spec) and PlayerView surface type.
+    //  - Realtek (OMX.realtek.video.decoder): fails at decoder init with
+    //    "setPortMode on output to DynamicANWBuffer failed", even for a Main/Level 4.1
+    //    720p source that ExoPlayer's own capability check approves. Reproduced in a
+    //    completely unrelated third-party app on the same unit, and survives a full
+    //    device reboot -- not a stuck/transient state, a real incompatibility with
+    //    Media3's dynamic output-buffer request on this vendor's OMX build.
+    // Excluding both by exact component name (not a vendor-substring match) forces
+    // MediaCodecSelector.DEFAULT's next candidate for AVC content -- trading CPU/power
+    // efficiency for actually rendering frames -- while leaving these vendors' OTHER
+    // hardware decoders (e.g. OMX.hisi.video.decoder.hevc, confirmed working) available.
+    // A blanket "hisi"/"realtek" substring match previously excluded those too, forcing
+    // software decode even for codecs that never had a confirmed hardware bug. The
+    // exclusion set lives in DecoderCapabilities since PlanFetchWorker/PlanModels also
+    // need it to decide whether to prefer an HEVC content rendition on these devices.
     private val safeMediaCodecSelector = MediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
         val infos = MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, requiresSecureDecoder, requiresTunnelingDecoder)
-        infos.filterNot { it.name.contains("hisi", ignoreCase = true) }
+        infos.filterNot { it.name in DecoderCapabilities.BROKEN_HARDWARE_DECODER_NAMES }
     }
 
     fun attachViews(playerView: PlayerView, imageView: ImageView, webView: WebView) {
@@ -242,7 +253,7 @@ class PlaybackEngine(private val context: Context) {
             }
             "image" -> {
                 Glide.with(context).clear(iv)
-                Glide.with(context).load(resolvedUri).centerCrop().into(iv)
+                Glide.with(context).load(resolvedUri).fitCenter().into(iv)
                 scheduleAdvanceTimer(item)
             }
             "web" -> {
@@ -471,7 +482,7 @@ class PlaybackEngine(private val context: Context) {
                 wv.visibility = android.view.View.GONE
 
                 Glide.with(context).clear(iv)
-                Glide.with(context).load(resolvedUri).centerCrop().into(iv)
+                Glide.with(context).load(resolvedUri).fitCenter().into(iv)
                 scheduleAdvanceTimer(item)
             }
             "web" -> {

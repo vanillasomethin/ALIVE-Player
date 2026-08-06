@@ -8,6 +8,7 @@ import androidx.work.WorkerParameters
 import com.alive.player.data.AppDatabase
 import com.alive.player.data.PlanCache
 import com.alive.player.network.DeviceApiProvider
+import com.alive.player.playback.DecoderCapabilities
 import com.alive.player.settings.DevicePrefs
 import com.alive.player.settings.FetchStatus
 import com.alive.player.settings.NtpSyncManager
@@ -77,12 +78,19 @@ class PlanFetchWorker(
                             "image" -> "jpg"
                             else    -> null
                         } ?: continue
+                    // Devices with no reliable hardware AVC decoder (so AVC would fall
+                    // back to a CPU-bound software decoder) prefer the HEVC rendition
+                    // when the server offers one, since it can use a working hardware
+                    // HEVC decoder instead. See DecoderCapabilities.preferHevc().
+                    val useHevc = item.type.equals("video", ignoreCase = true) &&
+                        !item.hevcUrl.isNullOrBlank() && !item.hevcMd5.isNullOrBlank() &&
+                        DecoderCapabilities.preferHevc()
                     DownloadWorker.enqueue(
                         applicationContext,
                         item.contentId,
                         "current",
-                        item.md5,
-                        item.url,
+                        if (useHevc) item.hevcMd5!! else item.md5,
+                        if (useHevc) item.hevcUrl!! else item.url,
                         ext,
                     )
                 }
