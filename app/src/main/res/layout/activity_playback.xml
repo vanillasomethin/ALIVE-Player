@@ -18,15 +18,18 @@
         android:layout_height="match_parent"
         android:layout_gravity="center">
 
-        <!-- INVISIBLE, not GONE: a GONE view is never laid out, so its TextureView never
-             gets a valid, sized Surface for ExoPlayer to render into. See
-             PlaybackEngine.transitionViews() for how this is kept true for its whole
-             lifecycle (toggled VISIBLE/INVISIBLE, never GONE, once attached). -->
+        <!-- Always VISIBLE, never GONE/INVISIBLE, once the app is running: on this
+             fleet's Hisilicon TextureView implementation, ExoPlayer silently never
+             renders a frame into a non-VISIBLE view (confirmed on-device, no error;
+             onRenderedFirstFrame just never fires), which would permanently break video
+             playback the first time it happened. It's the bottom-most sibling here, so
+             image_view/web_view simply draw over it when a video isn't the active item.
+             See PlaybackEngine.transitionViews(). -->
         <androidx.media3.ui.PlayerView
             android:id="@+id/player_view"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:visibility="invisible"
+            android:visibility="visible"
             app:use_controller="false"
             app:resize_mode="fit"
             app:surface_type="texture_view"

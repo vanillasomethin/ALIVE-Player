@@ -52,13 +52,12 @@ class PlaybackEngine(private val context: Context) {
 
     private var pendingItem: PlanItem? = null
 
-    // Set right before ExoPlayer.prepare() for a video item; consumed by
-    // videoEndListener.onRenderedFirstFrame() so the view swap only happens once there's
-    // an actual decoded frame to show. Revealing playerView any earlier exposes its
-    // default black shutter for however long prepare()/decode takes -- keeping whatever
-    // was on screen before is strictly better than a guaranteed blank flash.
+    // The view to hide once the incoming video's first frame actually renders (set right
+    // before ExoPlayer.prepare(), consumed by videoEndListener.onRenderedFirstFrame()).
+    // playerView itself is never gated this way -- see transitionViews() -- so hiding
+    // whatever was on top of it any earlier would expose a blank/frozen playerView for
+    // however long prepare()/decode takes, instead of the real first frame.
     private var pendingOldView: View? = null
-    private var pendingNewView: View? = null
 
     private var currentWindowIndex: Int = 0
     private var currentItemIndex: Int = 0
@@ -264,25 +263,12 @@ class PlaybackEngine(private val context: Context) {
                 } else {
                     MediaItem.fromUri(resolvedUri)
                 }
+                pendingOldView = oldView
                 player.setMediaItem(mediaItem)
                 player.prepare()
                 player.playWhenReady = true
                 startStallWatchdog(item)
                 scheduleAdvanceTimer(item)
-                pendingOldView = oldView
-                pendingNewView = newView
-                android.util.Log.d("PlaybackEngine", "VERIFY prepare() called for ${item.contentVersionId}, pendingNewView=$pendingNewView")
-                player.addListener(object : Player.Listener {
-                    override fun onRenderedFirstFrame() {
-                        android.util.Log.d("PlaybackEngine", "VERIFY direct-listener onRenderedFirstFrame fired")
-                    }
-                    override fun onPlaybackStateChanged(playbackState: Int) {
-                        android.util.Log.d("PlaybackEngine", "VERIFY state=$playbackState (1=IDLE,2=BUFFERING,3=READY,4=ENDED)")
-                    }
-                    override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
-                        android.util.Log.d("PlaybackEngine", "VERIFY onVideoSizeChanged ${videoSize.width}x${videoSize.height}")
-                    }
-                })
             }
             "image" -> {
                 Glide.with(context).clear(iv)
@@ -311,12 +297,14 @@ class PlaybackEngine(private val context: Context) {
             newView.translationX = 0f
             return
         }
-        // playerView must never go fully GONE once laid out: a GONE view is skipped by
-        // layout entirely, so its TextureView never gets a valid, sized Surface -- a
-        // later video's ExoPlayer would then have nowhere to render a frame, and
-        // onRenderedFirstFrame (see videoEndListener) would never fire again, permanently
-        // stuck. INVISIBLE keeps it laid out (and its Surface alive) while still hidden.
-        val hiddenVisibility = if (oldView === playerView) android.view.View.INVISIBLE else android.view.View.GONE
+        // playerView must never actually be hidden (GONE or INVISIBLE) once attached: on
+        // this device's TextureView implementation, ExoPlayer never renders a frame into
+        // a non-VISIBLE view -- confirmed on-device, no error, onRenderedFirstFrame just
+        // silently never fires -- which would permanently break every later video too.
+        // Leaving it VISIBLE underneath whatever draws on top (z-order: player_view is
+        // the bottom-most sibling) costs nothing -- a stale or absent frame is simply
+        // covered, not seen. Its alpha/translationX still reset normally next time it's
+        // used as newView.
         val durationMs = DevicePrefs(context).getTransitionDurationMs()
         when (currentTransition) {
             "FADE" -> {
@@ -325,7 +313,7 @@ class PlaybackEngine(private val context: Context) {
                 newView.visibility = android.view.View.VISIBLE
                 newView.animate().alpha(1f).setDuration(durationMs).start()
                 oldView?.animate()?.alpha(0f)?.setDuration(durationMs)?.withEndAction {
-                    oldView.visibility = hiddenVisibility
+                    if (oldView !== playerView) oldView.visibility = android.view.View.GONE
                     oldView.alpha = 1f
                 }?.start()
             }
@@ -336,12 +324,12 @@ class PlaybackEngine(private val context: Context) {
                 newView.visibility = android.view.View.VISIBLE
                 newView.animate().translationX(0f).setDuration(durationMs).start()
                 oldView?.animate()?.translationX(-w)?.setDuration(durationMs)?.withEndAction {
-                    oldView.visibility = hiddenVisibility
+                    if (oldView !== playerView) oldView.visibility = android.view.View.GONE
                     oldView.translationX = 0f
                 }?.start()
             }
             else -> {
-                oldView?.visibility = hiddenVisibility
+                if (oldView !== playerView) oldView?.visibility = android.view.View.GONE
                 newView.alpha = 1f
                 newView.translationX = 0f
                 newView.visibility = android.view.View.VISIBLE
@@ -352,9 +340,8 @@ class PlaybackEngine(private val context: Context) {
     private val videoEndListener = object : Player.Listener {
         override fun onRenderedFirstFrame() {
             val old = pendingOldView
-            val new = pendingNewView ?: return
             pendingOldView = null
-            pendingNewView = null
+            val new = playerView ?: return
             transitionViews(old, new)
         }
 
@@ -370,7 +357,6 @@ class PlaybackEngine(private val context: Context) {
             android.util.Log.e("PlaybackEngine", "Video error ${error.errorCode}: ${error.message}")
             cancelStallWatchdog()
             pendingOldView = null
-            pendingNewView = null
             // A decode/source error on a cached file usually means the file is bad, not the
             // media — drop it so the next plan fetch re-downloads with a fresh hash check.
             currentItem?.let { evictCachedCopy(it) }
@@ -515,17 +501,16 @@ class PlaybackEngine(private val context: Context) {
                 } else {
                     MediaItem.fromUri(resolvedUri)
                 }
+                // Same first-frame gating as renderItem() -- see videoEndListener.onRenderedFirstFrame().
+                pendingOldView = listOf(pv, iv, wv).firstOrNull { it !== pv && it.visibility == android.view.View.VISIBLE }
                 player.setMediaItem(mediaItem)
                 player.prepare()
                 player.playWhenReady = true
                 startStallWatchdog(item)
                 scheduleAdvanceTimer(item)
-                // Same first-frame gating as renderItem() -- see videoEndListener.onRenderedFirstFrame().
-                pendingOldView = listOf(pv, iv, wv).firstOrNull { it !== pv && it.visibility == android.view.View.VISIBLE }
-                pendingNewView = pv
             }
             "image" -> {
-                pv.visibility = android.view.View.GONE
+                // playerView is never hidden -- see transitionViews()'s doc comment.
                 iv.visibility = android.view.View.VISIBLE
                 wv.visibility = android.view.View.GONE
 
@@ -534,7 +519,6 @@ class PlaybackEngine(private val context: Context) {
                 scheduleAdvanceTimer(item)
             }
             "web" -> {
-                pv.visibility = android.view.View.GONE
                 iv.visibility = android.view.View.GONE
                 wv.visibility = android.view.View.VISIBLE
 
