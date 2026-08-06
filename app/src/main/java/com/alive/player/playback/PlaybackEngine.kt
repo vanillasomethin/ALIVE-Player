@@ -217,6 +217,21 @@ class PlaybackEngine(private val context: Context) {
         }
         val oldView = listOf(pv, iv, wv).firstOrNull { it !== newView && it.visibility == android.view.View.VISIBLE }
 
+        // Tear down any in-flight video unconditionally, not just when the NEXT item is
+        // also a video. Leaving it alive when advancing to an image/web item meant it kept
+        // decoding/playing in the background with videoEndListener still attached; whenever
+        // it later hit STATE_ENDED or an error on its own schedule, that stale listener fired
+        // unconditionally -- cancelling the CURRENT item's advance timer and forcing an
+        // immediate reloadAndAdvance() regardless of how much of its own duration had
+        // elapsed. That's what was cutting photos short well before their configured
+        // duration: a stale video from earlier in the loop finishing in the background.
+        cancelStallWatchdog()
+        exoPlayer?.let { old ->
+            old.removeListener(videoEndListener)
+            old.release()
+        }
+        exoPlayer = null
+
         when (item.type) {
             "video" -> {
                 cancelAdvanceTimer()
@@ -225,10 +240,6 @@ class PlaybackEngine(private val context: Context) {
                 // gets into a bad state once (output buffers never drained, decoder stuck
                 // flushing/restarting), the SAME instance never recovers for any later item
                 // either. A fresh instance gets a fresh MediaCodec/Surface handshake each time.
-                exoPlayer?.let { old ->
-                    old.removeListener(videoEndListener)
-                    old.release()
-                }
                 val player = ExoPlayer.Builder(context, DefaultRenderersFactory(context).setMediaCodecSelector(safeMediaCodecSelector)).build()
                 exoPlayer = player
                 playerView?.player = player
