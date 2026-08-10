@@ -117,3 +117,42 @@ activate once a device is Device Owner.
 sandbox (no Android SDK, no network access to Google's Maven repo). Manual
 review of all changed files found no issues, but a real `assembleDebug` build
 should be run before this ships.
+
+---
+
+# Instability Diagnosis + SMIL Nested-Playlist Engine
+
+- [x] 1. Instability audit — static review of the four suspected failure categories → `docs/instability-audit.md`
+- [x] 2. Field capture script — `tools/diagnose-device.sh` (logcat + dumpsys, pre-filtered per category)
+- [x] 3. Fleet incident telemetry — `Incident` rows (crash stacks, stalls, fallbacks) now upload with every heartbeat, deleted locally after 2xx (no Room version bump — destructive migration would wipe the PoP backlog)
+- [x] 4. garlic-player SMIL study (scratchpad clone, AGPL — summary only, clone deleted) → `docs/smil-reference-notes.md`
+- [x] 5. `PlanNode` tree parsing in `PlanModels.kt` (`nested` field of /api/device/plan; flat plans unchanged)
+- [x] 6. `SmilSequencer` — original depth-first traversal with per-container cursors, keyed by planHash
+- [x] 7. `PlaybackEngine.advance()` delegates to the sequencer when a nested tree exists; legacy round-robin otherwise
+- [x] 8. JVM unit tests for the sequencer (order, nesting, empty/deep trees, cursor persistence, flatten-equivalence)
+
+## Review
+
+**Diagnosis (Task A).** All four suspected categories already had countermeasures in code
+(foreground service + WakeLock, OEM autostart/battery prompts + device-owner HOME claim,
+BootReceiver + crash handler, decoder blocklist + stall watchdog) — details with file/line
+references in `docs/instability-audit.md`. The actionable gap was evidence: incidents lived
+only in the on-device Room table. They now ship with heartbeats and land as
+`TelemetryEvent(route='player/incident')` rows, queryable in the admin telemetry viewer, so
+the dominant failure category is answerable from fleet data. Logcat cross-referencing waits
+on a capture from a real device (`tools/diagnose-device.sh`).
+
+**SMIL engine (Task B).** Backend companion (studio repo, same branch): `PlaylistItem`
+gained `childPlaylistId` (XOR with `contentId`, cycle-rejected, depth ≤ 3), and
+`/api/device/plan` emits both the flattened `items` (legacy players and the download
+manifest — flattening equals SMIL play order) and the `nested` tree. Player side:
+`SmilSequencer` walks the tree with live per-playlist cursors (groundwork for future
+repeat/shuffle/interleave), keyed by planHash so cursors survive the per-item plan reloads.
+No garlic-player code was copied, adapted, or vendored — architecture summary only
+(`docs/smil-reference-notes.md`); the scratch clone was deleted after the study.
+
+**Verification note:** unlike the previous session, `dl.google.com` was reachable this
+time — Android cmdline-tools + SDK 35 were installed in the session scratchpad, so
+`:app:compileDebugKotlin` and `:app:testDebugUnitTest` ran for real (closing that
+session's compile-verification gap as well). Studio: `tsc --noEmit` + `next build`;
+Prisma migration DDL cross-checked against `prisma migrate diff`.

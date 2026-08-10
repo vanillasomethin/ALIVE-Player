@@ -20,6 +20,7 @@ import com.alive.player.settings.DevicePrefs
 import com.alive.player.settings.FetchStatus
 import com.alive.player.download.AssetDownloader
 import com.alive.player.schedule.PlanItem
+import com.alive.player.schedule.SmilSequencer
 import com.alive.player.worker.PopUploadWorker
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
@@ -61,6 +62,12 @@ class PlaybackEngine(private val context: Context) {
 
     private var currentWindowIndex: Int = 0
     private var currentItemIndex: Int = 0
+
+    // Nested (Master → Internal) playlist traversal. Keyed by the server's planHash so
+    // cursors persist across the per-item plan reloads (reloadAndAdvance) but reset the
+    // moment the plan's content actually changes.
+    private var sequencer: SmilSequencer? = null
+    private var sequencerKey: String? = null
 
     /** Called when the engine has no plan. Receives a human-readable status line. */
     var onWaiting: ((String) -> Unit)? = null
@@ -178,20 +185,31 @@ class PlaybackEngine(private val context: Context) {
         val now = System.currentTimeMillis()
         val activeWindow = plan.windows.firstOrNull { it.startEpochMs <= now && now < it.endEpochMs }
 
-        val itemList = if (activeWindow != null && activeWindow.items.isNotEmpty()) {
-            activeWindow.items
+        val scheduledActive = activeWindow != null && activeWindow.items.isNotEmpty()
+
+        val item: PlanItem? = if (scheduledActive && plan.nested.isNotEmpty()) {
+            // Nested plan: SmilSequencer walks the Master → Internal tree. Its traversal
+            // order equals the server's flattened `items`, so behaviour matches legacy
+            // players; the tree keeps per-playlist cursors for future semantics.
+            if (sequencer == null || sequencerKey != plan.nestedKey) {
+                sequencer = SmilSequencer(plan.nested)
+                sequencerKey = plan.nestedKey
+            }
+            sequencer?.next()
         } else {
-            plan.fallbackItems
+            val itemList = if (scheduledActive) activeWindow!!.items else plan.fallbackItems
+            if (itemList.isEmpty()) null else {
+                val picked = itemList[currentItemIndex % itemList.size]
+                currentItemIndex = (currentItemIndex + 1) % itemList.size
+                picked
+            }
         }
 
-        if (itemList.isEmpty()) {
+        if (item == null) {
             onWaiting?.invoke("No content for current time slot")
             startRetryCountdown()
             return
         }
-
-        val item = itemList[currentItemIndex % itemList.size]
-        currentItemIndex = (currentItemIndex + 1) % itemList.size
 
         renderItem(item)
     }

@@ -52,6 +52,12 @@ data class PopEventPayload(
     val durationMs: Long,
 )
 
+data class IncidentPayload(
+    val type: String,       // UNCAUGHT_EXCEPTION | STUCK_PLAYBACK | FALLBACK_TRIGGERED
+    val atMs: Long,         // epoch ms the incident was recorded on-device
+    val metadata: String?,  // stack trace excerpt or context, already clamped on insert
+)
+
 data class UpdateInfo(
     val versionCode: Int,
     val versionName: String?,
