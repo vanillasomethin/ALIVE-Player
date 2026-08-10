@@ -67,6 +67,7 @@ class DeviceApiProvider(
             // a content re-download, but must still be read on every poll (including the
             // notModified short-circuit below).
             val orientation = root.optString("orientation", null)
+            val preferredRendition = root.optString("preferredRendition", null)
             val config = root.optJSONObject("config")?.let {
                 PlayerConfig(
                     retryIntervalMs = if (it.has("retryIntervalMs")) it.getLong("retryIntervalMs") else null,
@@ -86,6 +87,7 @@ class DeviceApiProvider(
                     notModified = true,
                     orientation = orientation,
                     config = config,
+                    preferredRendition = preferredRendition,
                 )
             }
             fun parseItems(arr: JSONArray) = (0 until arr.length()).map { i ->
@@ -100,6 +102,8 @@ class DeviceApiProvider(
                     order = o.getInt("order"),
                     hevcUrl = o.optString("hevcUrl", null),
                     hevcMd5 = o.optString("hevcMd5", null),
+                    baselineUrl = o.optString("baselineUrl", null),
+                    baselineMd5 = o.optString("baselineMd5", null),
                 )
             }
             val items = parseItems(root.optJSONArray("items") ?: JSONArray())
@@ -126,6 +130,7 @@ class DeviceApiProvider(
                 orientation = orientation,
                 config = config,
                 fallbackItems = fallbackItems,
+                preferredRendition = preferredRendition,
             )
         } finally {
             conn.disconnect()

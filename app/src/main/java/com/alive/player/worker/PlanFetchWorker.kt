@@ -81,21 +81,10 @@ class PlanFetchWorker(
                             "image" -> "jpg"
                             else    -> null
                         } ?: continue
-                    // Devices with no reliable hardware AVC decoder (so AVC would fall
-                    // back to a CPU-bound software decoder) prefer the HEVC rendition
-                    // when the server offers one, since it can use a working hardware
-                    // HEVC decoder instead. See DecoderCapabilities.preferHevc().
-                    val useHevc = item.type.equals("video", ignoreCase = true) &&
-                        !item.hevcUrl.isNullOrBlank() && !item.hevcMd5.isNullOrBlank() &&
-                        DecoderCapabilities.preferHevc()
-                    DownloadWorker.enqueue(
-                        applicationContext,
-                        item.contentId,
-                        "current",
-                        if (useHevc) item.hevcMd5!! else item.md5,
-                        if (useHevc) item.hevcUrl!! else item.url,
-                        ext,
-                    )
+                    // Must mirror PlanModels.resolveRendition() exactly, or the file this
+                    // downloads and the file playback expects would disagree.
+                    val (md5, url) = resolveDownloadRendition(item, result.preferredRendition)
+                    DownloadWorker.enqueue(applicationContext, item.contentId, "current", md5, url, ext)
                 }
             }
 
@@ -158,6 +147,20 @@ class PlanFetchWorker(
         } catch (ex: Exception) {
             null
         }
+    }
+
+    /** Mirrors PlanModels.resolveRendition() -- same three-tier logic, operating on the
+     *  typed StudioPlanItem this worker gets from DeviceApiProvider instead of raw JSON. */
+    private fun resolveDownloadRendition(item: com.alive.player.network.StudioPlanItem, preferredRendition: String?): Pair<String, String> {
+        if (!item.type.equals("video", ignoreCase = true)) return item.md5 to item.url
+        if (preferredRendition == "H264_BASELINE" && !item.baselineUrl.isNullOrBlank() && !item.baselineMd5.isNullOrBlank()) {
+            return item.baselineMd5 to item.baselineUrl
+        }
+        if (preferredRendition == "H264_MAIN" || preferredRendition == "H264_BASELINE") {
+            return item.md5 to item.url
+        }
+        val useHevc = !item.hevcUrl.isNullOrBlank() && !item.hevcMd5.isNullOrBlank() && DecoderCapabilities.preferHevc()
+        return if (useHevc) item.hevcMd5!! to item.hevcUrl!! else item.md5 to item.url
     }
 
     private fun extFromUrl(url: String): String? {

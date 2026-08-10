@@ -32,13 +32,34 @@ private fun isoToEpochMs(iso: String): Long =
 
 // Mirrors the rendition choice PlanFetchWorker makes when downloading, so the file
 // AssetDownloader resolves for playback (keyed by contentId + this md5) is the one
-// that actually got downloaded. DecoderCapabilities.preferHevc() is a pure function of
-// the device's codec list, so both call sites always agree without any shared state.
-private fun resolveRendition(o: JSONObject, type: String): Pair<String, String?> {
+// that actually got downloaded. preferredRendition (server-learned, from
+// Device.renditionTier) and DecoderCapabilities.preferHevc() (local heuristic) are
+// both pure functions of inputs both call sites already have, so they always agree
+// without any shared state.
+//
+// preferredRendition == null/"HEVC" (the default): no negative signal yet for this
+// device -- defer entirely to the local heuristic, exactly as before this existed.
+// "H264_MAIN"/"H264_BASELINE": this device has already demonstrably failed a higher
+// tier (a real playback stall or a failed "Test screen" check) -- hard override, do
+// NOT fall back to the local heuristic even if it would otherwise pick HEVC.
+private fun resolveRendition(o: JSONObject, type: String, preferredRendition: String?): Pair<String, String?> {
+    if (type != "video") {
+        return o.getString("url") to o.optString("md5", null).takeIf { !it.isNullOrBlank() }
+    }
+    val baselineUrl = o.optString("baselineUrl", null)
+    val baselineMd5 = o.optString("baselineMd5", null)
+    if (preferredRendition == "H264_BASELINE" && !baselineUrl.isNullOrBlank() && !baselineMd5.isNullOrBlank()) {
+        return baselineUrl to baselineMd5
+    }
+    if (preferredRendition == "H264_MAIN" || preferredRendition == "H264_BASELINE") {
+        // Baseline unavailable for this content yet (not re-transcoded) -- fall to the
+        // guaranteed Main asset, never HEVC, since the override exists specifically to
+        // stop offering a tier this device has already failed.
+        return o.getString("url") to o.optString("md5", null).takeIf { !it.isNullOrBlank() }
+    }
     val hevcUrl = o.optString("hevcUrl", null)
     val hevcMd5 = o.optString("hevcMd5", null)
-    val useHevc = type == "video" && !hevcUrl.isNullOrBlank() && !hevcMd5.isNullOrBlank() &&
-        DecoderCapabilities.preferHevc()
+    val useHevc = !hevcUrl.isNullOrBlank() && !hevcMd5.isNullOrBlank() && DecoderCapabilities.preferHevc()
     return if (useHevc) {
         hevcUrl to hevcMd5
     } else {
@@ -54,13 +75,14 @@ fun parsePlan(json: String): Plan {
 
     if (hasStudioFormat) {
         val scheduleId = root.optString("scheduleId", null)
+        val preferredRendition = root.optString("preferredRendition", null)
 
         val itemsArr = root.optJSONArray("items") ?: org.json.JSONArray()
         val items = buildList {
             for (i in 0 until itemsArr.length()) {
                 val o = itemsArr.getJSONObject(i)
                 val type = o.getString("type").lowercase()
-                val (url, md5) = resolveRendition(o, type)
+                val (url, md5) = resolveRendition(o, type, preferredRendition)
                 add(PlanItem(
                     contentVersionId = o.getString("contentId"),
                     durationMs = o.getLong("durationMs"),
@@ -97,7 +119,7 @@ fun parsePlan(json: String): Plan {
             for (i in 0 until fallbackArr.length()) {
                 val o = fallbackArr.getJSONObject(i)
                 val type = o.getString("type").lowercase()
-                val (url, md5) = resolveRendition(o, type)
+                val (url, md5) = resolveRendition(o, type, preferredRendition)
                 add(PlanItem(
                     contentVersionId = o.getString("contentId"),
                     durationMs = o.getLong("durationMs"),
