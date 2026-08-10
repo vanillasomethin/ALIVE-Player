@@ -591,6 +591,12 @@ class PlaybackActivity : Activity() {
      * brings the player right back, but a moment of home-screen exposure is possible.
      * Fully preventing that needs startLockTask()/setLockTaskPackages() — a bigger,
      * separate change not included here.
+     *
+     * MENU is the deliberate exception: it always opens Settings (see below), since
+     * actually exiting to the Android home screen doesn't work cleanly here anyway —
+     * PairingActivity is the registered HOME app and immediately relaunches this
+     * Activity on a paired device, so Settings is the one screen that's actually
+     * reachable as an "exit" from playback.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
@@ -610,9 +616,17 @@ class PlaybackActivity : Activity() {
                     // the focused button actually receives the click.
                     if (waitingOverlay.visibility != View.VISIBLE) return true
                 }
+                KeyEvent.KEYCODE_MENU -> {
+                    // Dedicated, always-available escape hatch (unlike the nav keys below,
+                    // not gated behind kioskKeyLockEnabled) -- MENU is a deliberate press,
+                    // not something a remote gets bumped into accidentally the way BACK/HOME
+                    // can be, so it's safe to always open Settings rather than requiring the
+                    // triple-select gesture.
+                    startActivity(Intent(this, SettingsActivity::class.java))
+                    return true
+                }
                 KeyEvent.KEYCODE_BACK,
                 KeyEvent.KEYCODE_HOME,
-                KeyEvent.KEYCODE_MENU,
                 KeyEvent.KEYCODE_SEARCH,
                 KeyEvent.KEYCODE_APP_SWITCH ->
                     // Remote-configurable (see PlayerConfig.kioskKeyLockEnabled) so a
