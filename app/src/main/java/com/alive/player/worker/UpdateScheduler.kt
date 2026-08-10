@@ -26,4 +26,10 @@ object UpdateScheduler {
             periodic,
         )
     }
+
+    /** Stop OTA update checks (e.g. the 5×-BACK kiosk exit, so a pending update can't
+     *  re-claim HOME or relaunch the app mid-servicing). Reversed by schedule(). */
+    fun cancel(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(PERIODIC_WORK_NAME)
+    }
 }
