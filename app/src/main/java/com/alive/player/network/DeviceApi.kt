@@ -12,6 +12,8 @@ data class StudioPlanItem(
     val order: Int,
     val hevcUrl: String? = null, // optional HEVC rendition -- see DecoderCapabilities.preferHevc()
     val hevcMd5: String? = null,
+    val baselineUrl: String? = null, // optional H.264 Baseline@3.1 rendition -- server-forced
+    val baselineMd5: String? = null, // fallback once a device fails higher tiers, see preferredRendition
 )
 
 data class StudioTimelineSlot(
@@ -44,6 +46,11 @@ data class FetchPlanResult(
     // Sound Ad store-owner mute override (Alive Partner app). Like orientation/config,
     // not part of planHash, so it's read on every poll, not just when content changes.
     val soundAdMuted: Boolean = false,
+    // Server-learned hard override, from Device.renditionTier. "HEVC" (default) means no
+    // negative signal yet -- defer to DecoderCapabilities.preferHevc() as before. "H264_MAIN"
+    // or "H264_BASELINE" mean this device has already demonstrably failed a higher tier --
+    // ignore the local heuristic and use exactly that rendition. See PlanModels.resolveRendition.
+    val preferredRendition: String? = null,
 )
 
 data class PopEventPayload(
