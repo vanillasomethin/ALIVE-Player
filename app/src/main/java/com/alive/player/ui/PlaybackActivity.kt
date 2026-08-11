@@ -757,8 +757,13 @@ class PlaybackActivity : Activity() {
         //    launch it directly; fall back to the implicit intent only if none exists.
         runCatching {
             val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            // Flag 0, NOT MATCH_DEFAULT_ONLY: HOME apps resolve by CATEGORY_HOME and many
+            // OEM TV launchers don't also declare CATEGORY_DEFAULT, so MATCH_DEFAULT_ONLY
+            // silently drops them — leaving only our own PairingActivity, which sends the
+            // fallback implicit intent straight into the "Select Home app" picker on the
+            // signage screen (observed on HiSilicon/selenview boxes). Verified on-device.
             val launcher = packageManager
-                .queryIntentActivities(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)
+                .queryIntentActivities(homeIntent, 0)
                 .firstOrNull { it.activityInfo?.packageName != packageName }
                 ?.activityInfo
             startActivity(
