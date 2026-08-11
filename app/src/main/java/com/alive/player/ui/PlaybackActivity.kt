@@ -742,11 +742,15 @@ class PlaybackActivity : Activity() {
         //     permanently defeating this hatch on that unit. Legal for our own package.
         runCatching { packageManager.clearPackagePreferredActivities(packageName) }
         // 2. Stop the cross-process watchdog first, so it can't restart playback after (3).
-        runCatching { stopService(Intent(this, WatchdogService::class.java)) }
+        //    requestStop, not stopService: stopping a foreground service whose
+        //    startForegroundService() promise is still outstanding (process still
+        //    spawning) crashes the app with RemoteServiceException ~5s later — hit
+        //    for real on a HiSilicon panel when exiting shortly after a cold start.
+        runCatching { WatchdogService.requestStop(this) }
         // 3. Stop playback: unbind, then stop the foreground service (its onDestroy releases
         //    the wakelock and stops the engine + the process-heartbeat writer).
         if (bound) { runCatching { unbindService(connection) }; bound = false }
-        runCatching { stopService(Intent(this, PlaybackForegroundService::class.java)) }
+        runCatching { PlaybackForegroundService.requestStop(this) }
         // 4. Cancel plan-fetch + update workers (HeartbeatScheduler stays — see kdoc).
         runCatching { PlanFetchScheduler.cancel(this) }
         runCatching { UpdateScheduler.cancel(this) }
