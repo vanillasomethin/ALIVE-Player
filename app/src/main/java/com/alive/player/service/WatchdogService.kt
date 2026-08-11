@@ -63,9 +63,15 @@ class WatchdogService : Service() {
         // dead) — kill it outright and let BootReceiver/HOME-relaunch/our own restart
         // bring it back clean rather than trying to nudge a possibly-corrupted state.
         Process.killProcess(mainPid)
-        applicationContext.startForegroundService(
-            Intent(applicationContext, PlaybackForegroundService::class.java)
-        )
+        // runCatching: on Android 15 a background FGS start can throw
+        // ForegroundServiceStartNotAllowedException on non-owner installs. Crashing
+        // here would START_STICKY-restart this service into a perpetual kill/crash
+        // loop; failing quietly leaves recovery to BootReceiver/HOME-relaunch instead.
+        runCatching {
+            applicationContext.startForegroundService(
+                Intent(applicationContext, PlaybackForegroundService::class.java)
+            )
+        }
     }
 
     private fun findMainProcessPid(): Int? {
