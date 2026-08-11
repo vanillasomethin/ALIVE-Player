@@ -1,27 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- New pairing UI: device auto-claims on boot, shows a 6-char code, waits for admin to confirm -->
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Pairing UI: device auto-claims on boot, shows a 6-char code, waits for admin to confirm.
+     Single-column portrait layout, since the fleet is portrait-only: this is what an installer
+     actually sees on the mounted panel, not a rotated landscape design. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/alive_ink"
-    android:padding="48dp">
+    android:fillViewport="true">
 
-    <!-- Main content: two-column on landscape TV -->
-    <LinearLayout
-        android:id="@+id/main_content"
+    <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_centerVertical="true"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:minHeight="match_parent"
+        android:padding="32dp">
 
-        <!-- Left: brand + instructions -->
         <LinearLayout
-            android:layout_width="0dp"
+            android:id="@+id/main_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="55"
-            android:orientation="vertical"
-            android:paddingEnd="48dp">
+            android:layout_centerVertical="true"
+            android:orientation="vertical">
 
             <!-- alive● logo -->
             <LinearLayout
@@ -29,7 +27,7 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:layout_marginBottom="32dp">
+                android:layout_marginBottom="28dp">
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -84,12 +82,12 @@
                 android:layout_height="wrap_content"
                 android:text="Seen.\nRemembered.\nBought."
                 android:textColor="@color/alive_white"
-                android:textSize="38sp"
+                android:textSize="34sp"
                 android:textStyle="bold"
                 android:fontFamily="@font/poppins_bold"
                 android:letterSpacing="-0.03"
                 android:lineSpacingMultiplier="1.1"
-                android:layout_marginBottom="20dp" />
+                android:layout_marginBottom="24dp" />
 
             <!-- Step instructions -->
             <LinearLayout
@@ -97,7 +95,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:visibility="visible">
+                android:visibility="visible"
+                android:layout_marginBottom="32dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -120,7 +119,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Note the screen code shown on the right"
+                        android:text="Note the screen code shown below"
                         android:textColor="@color/alive_white"
                         android:textSize="14sp"
                         android:fontFamily="@font/poppins_regular" />
@@ -175,7 +174,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Enter the code — or scan the QR code shown on the right"
+                        android:text="Enter the code — or scan the QR code shown below"
                         android:textColor="@color/alive_muted"
                         android:textSize="14sp"
                         android:fontFamily="@font/poppins_regular" />
@@ -184,232 +183,231 @@
 
             </LinearLayout>
 
+            <!-- Code card -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_code_card"
+                android:padding="32dp"
+                android:gravity="center_horizontal">
+
+                <!-- Loading state (before claim completes) -->
+                <LinearLayout
+                    android:id="@+id/card_loading"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center_horizontal"
+                    android:visibility="visible">
+
+                    <ProgressBar
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:indeterminateTint="@color/alive_red"
+                        android:layout_marginBottom="16dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Connecting…"
+                        android:textColor="@color/alive_muted"
+                        android:textSize="13sp"
+                        android:fontFamily="@font/poppins_regular" />
+
+                </LinearLayout>
+
+                <!-- Code display state (after claim, waiting for admin) -->
+                <LinearLayout
+                    android:id="@+id/card_code"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center_horizontal"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="YOUR SCREEN CODE"
+                        android:textColor="@color/alive_muted"
+                        android:textSize="10sp"
+                        android:fontFamily="@font/poppins_regular"
+                        android:letterSpacing="0.22"
+                        android:layout_marginBottom="12dp" />
+
+                    <TextView
+                        android:id="@+id/pairing_code_value"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="——"
+                        android:textColor="@color/alive_white"
+                        android:textSize="52sp"
+                        android:textStyle="bold"
+                        android:fontFamily="@font/poppins_bold"
+                        android:letterSpacing="0.15"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Option A — enter this code in admin → Pair screen"
+                        android:textColor="@color/alive_muted"
+                        android:textSize="12sp"
+                        android:fontFamily="@font/poppins_regular"
+                        android:gravity="center"
+                        android:layout_marginBottom="20dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="OR"
+                        android:textColor="@color/alive_muted"
+                        android:textSize="10sp"
+                        android:fontFamily="@font/poppins_bold"
+                        android:letterSpacing="0.22"
+                        android:layout_marginBottom="16dp" />
+
+                    <ImageView
+                        android:id="@+id/qr_admin_image"
+                        android:layout_width="100dp"
+                        android:layout_height="100dp"
+                        android:scaleType="fitXY"
+                        android:background="@color/alive_white"
+                        android:padding="6dp"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Option B — scan with your phone to connect automatically"
+                        android:textColor="@color/alive_muted"
+                        android:textSize="12sp"
+                        android:fontFamily="@font/poppins_regular"
+                        android:gravity="center"
+                        android:layout_marginBottom="28dp" />
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/code_card_border"
+                        android:layout_marginBottom="20dp" />
+
+                    <ProgressBar
+                        android:id="@+id/waiting_spinner"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:indeterminateTint="@color/alive_red"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Waiting for admin…"
+                        android:textColor="@color/alive_muted"
+                        android:textSize="12sp"
+                        android:fontFamily="@font/poppins_regular"
+                        android:gravity="center" />
+
+                </LinearLayout>
+
+                <!-- Success state -->
+                <LinearLayout
+                    android:id="@+id/card_success"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center_horizontal"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="✓"
+                        android:textColor="@color/alive_green"
+                        android:textSize="48sp"
+                        android:gravity="center"
+                        android:layout_marginBottom="12dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Screen confirmed!"
+                        android:textColor="@color/alive_white"
+                        android:textSize="18sp"
+                        android:fontFamily="@font/poppins_bold"
+                        android:gravity="center"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Starting playback…"
+                        android:textColor="@color/alive_muted"
+                        android:textSize="13sp"
+                        android:fontFamily="@font/poppins_regular"
+                        android:gravity="center" />
+
+                </LinearLayout>
+
+                <!-- Error state -->
+                <LinearLayout
+                    android:id="@+id/card_error"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center_horizontal"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Connection failed"
+                        android:textColor="@color/alive_red"
+                        android:textSize="15sp"
+                        android:fontFamily="@font/poppins_bold"
+                        android:gravity="center"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:id="@+id/error_message"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/alive_muted"
+                        android:textSize="12sp"
+                        android:fontFamily="@font/poppins_regular"
+                        android:gravity="center"
+                        android:layout_marginBottom="20dp" />
+
+                    <Button
+                        android:id="@+id/retry_button"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:text="Retry"
+                        android:textColor="@color/alive_white"
+                        android:textSize="14sp"
+                        android:fontFamily="@font/poppins_bold"
+                        android:background="@drawable/bg_red_button"
+                        android:stateListAnimator="@null" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
         </LinearLayout>
 
-        <!-- Right: code card -->
-        <LinearLayout
-            android:layout_width="0dp"
+        <!-- Bottom status bar -->
+        <TextView
+            android:id="@+id/pairing_status"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="45"
-            android:orientation="vertical"
-            android:background="@drawable/bg_code_card"
-            android:padding="36dp"
-            android:gravity="center_horizontal">
+            android:layout_alignParentBottom="true"
+            android:layout_alignParentStart="true"
+            android:text=""
+            android:textColor="@color/alive_muted"
+            android:textSize="12sp"
+            android:fontFamily="@font/poppins_regular" />
 
-            <!-- Loading state (before claim completes) -->
-            <LinearLayout
-                android:id="@+id/card_loading"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center_horizontal"
-                android:visibility="visible">
+    </RelativeLayout>
 
-                <ProgressBar
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
-                    android:indeterminateTint="@color/alive_red"
-                    android:layout_marginBottom="16dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Connecting…"
-                    android:textColor="@color/alive_muted"
-                    android:textSize="13sp"
-                    android:fontFamily="@font/poppins_regular" />
-
-            </LinearLayout>
-
-            <!-- Code display state (after claim, waiting for admin) -->
-            <LinearLayout
-                android:id="@+id/card_code"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center_horizontal"
-                android:visibility="gone">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="YOUR SCREEN CODE"
-                    android:textColor="@color/alive_muted"
-                    android:textSize="10sp"
-                    android:fontFamily="@font/poppins_regular"
-                    android:letterSpacing="0.22"
-                    android:layout_marginBottom="12dp" />
-
-                <TextView
-                    android:id="@+id/pairing_code_value"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="——"
-                    android:textColor="@color/alive_white"
-                    android:textSize="52sp"
-                    android:textStyle="bold"
-                    android:fontFamily="@font/poppins_bold"
-                    android:letterSpacing="0.15"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Option A — enter this code in admin → Pair screen"
-                    android:textColor="@color/alive_muted"
-                    android:textSize="12sp"
-                    android:fontFamily="@font/poppins_regular"
-                    android:gravity="center"
-                    android:layout_marginBottom="20dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="OR"
-                    android:textColor="@color/alive_muted"
-                    android:textSize="10sp"
-                    android:fontFamily="@font/poppins_bold"
-                    android:letterSpacing="0.22"
-                    android:layout_marginBottom="16dp" />
-
-                <ImageView
-                    android:id="@+id/qr_admin_image"
-                    android:layout_width="100dp"
-                    android:layout_height="100dp"
-                    android:scaleType="fitXY"
-                    android:background="@color/alive_white"
-                    android:padding="6dp"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Option B — scan with your phone to connect automatically"
-                    android:textColor="@color/alive_muted"
-                    android:textSize="12sp"
-                    android:fontFamily="@font/poppins_regular"
-                    android:gravity="center"
-                    android:layout_marginBottom="28dp" />
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:background="@color/code_card_border"
-                    android:layout_marginBottom="20dp" />
-
-                <ProgressBar
-                    android:id="@+id/waiting_spinner"
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:indeterminateTint="@color/alive_red"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Waiting for admin…"
-                    android:textColor="@color/alive_muted"
-                    android:textSize="12sp"
-                    android:fontFamily="@font/poppins_regular"
-                    android:gravity="center" />
-
-            </LinearLayout>
-
-            <!-- Success state -->
-            <LinearLayout
-                android:id="@+id/card_success"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center_horizontal"
-                android:visibility="gone">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="✓"
-                    android:textColor="@color/alive_green"
-                    android:textSize="48sp"
-                    android:gravity="center"
-                    android:layout_marginBottom="12dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Screen confirmed!"
-                    android:textColor="@color/alive_white"
-                    android:textSize="18sp"
-                    android:fontFamily="@font/poppins_bold"
-                    android:gravity="center"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Starting playback…"
-                    android:textColor="@color/alive_muted"
-                    android:textSize="13sp"
-                    android:fontFamily="@font/poppins_regular"
-                    android:gravity="center" />
-
-            </LinearLayout>
-
-            <!-- Error state -->
-            <LinearLayout
-                android:id="@+id/card_error"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center_horizontal"
-                android:visibility="gone">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Connection failed"
-                    android:textColor="@color/alive_red"
-                    android:textSize="15sp"
-                    android:fontFamily="@font/poppins_bold"
-                    android:gravity="center"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:id="@+id/error_message"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/alive_muted"
-                    android:textSize="12sp"
-                    android:fontFamily="@font/poppins_regular"
-                    android:gravity="center"
-                    android:layout_marginBottom="20dp" />
-
-                <Button
-                    android:id="@+id/retry_button"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:text="Retry"
-                    android:textColor="@color/alive_white"
-                    android:textSize="14sp"
-                    android:fontFamily="@font/poppins_bold"
-                    android:background="@drawable/bg_red_button"
-                    android:stateListAnimator="@null" />
-
-            </LinearLayout>
-
-        </LinearLayout>
-
-    </LinearLayout>
-
-    <!-- Bottom status bar -->
-    <TextView
-        android:id="@+id/pairing_status"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
-        android:layout_alignParentStart="true"
-        android:text=""
-        android:textColor="@color/alive_muted"
-        android:textSize="12sp"
-        android:fontFamily="@font/poppins_regular" />
-
-</RelativeLayout>
+</ScrollView>

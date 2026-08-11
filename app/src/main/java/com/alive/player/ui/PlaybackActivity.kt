@@ -78,7 +78,6 @@ class PlaybackActivity : Activity() {
     private lateinit var diagStorage: TextView
     private lateinit var diagPending: TextView
     private lateinit var adminControls: LinearLayout
-    private lateinit var btnRotate: Button
     private lateinit var btnRefresh: Button
     private lateinit var newContentBanner: LinearLayout
     private lateinit var downloadCorner: LinearLayout
@@ -239,7 +238,6 @@ class PlaybackActivity : Activity() {
         diagStorage       = findViewById(R.id.diag_storage)
         diagPending       = findViewById(R.id.diag_pending)
         adminControls     = findViewById(R.id.admin_controls)
-        btnRotate         = findViewById(R.id.btn_rotate)
         btnRefresh        = findViewById(R.id.btn_refresh)
         newContentBanner  = findViewById(R.id.new_content_banner)
         downloadCorner    = findViewById(R.id.download_corner)
@@ -249,13 +247,6 @@ class PlaybackActivity : Activity() {
         // ── Retry / refresh ──────────────────────────────────────────────
         retryButton.setOnClickListener { triggerRefresh() }
         btnRefresh.setOnClickListener  { triggerRefresh() }
-
-        // ── Rotate ───────────────────────────────────────────────────────
-        btnRotate.setOnClickListener {
-            cycleOrientation()
-            applyContentRotation()
-            flashControl(btnRotate)
-        }
 
         // ── 5-tap → Settings ─────────────────────────────────────────────
         waitingOverlay.setOnClickListener {
