@@ -4,6 +4,7 @@ import android.content.Context
 import android.provider.Settings
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.alive.player.data.DeviceDecommissioner
 import com.alive.player.network.ApiHttpException
 import com.alive.player.network.DeviceApiProvider
 import com.alive.player.settings.DevicePrefs
@@ -27,6 +28,12 @@ class HeartbeatWorker(
             try {
                 heartbeat(token)
             } catch (ex: ApiHttpException) {
+                // 410 = this screen was deleted in the admin panel — decommission
+                // rather than re-claim, which would resurrect it as a new device.
+                if (ex.code == 410) {
+                    DeviceDecommissioner.wipe(applicationContext, "heartbeat returned 410 — deleted in admin panel")
+                    return Result.success()
+                }
                 // See PopUploadWorker.reclaimToken — 401/403 means the token was rotated
                 // (e.g. admin re-paired this device), so re-claim and retry once.
                 if (ex.code == 401 || ex.code == 403) {

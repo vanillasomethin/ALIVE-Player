@@ -5,6 +5,7 @@ import android.provider.Settings
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.alive.player.data.AppDatabase
+import com.alive.player.data.DeviceDecommissioner
 import com.alive.player.network.ApiHttpException
 import com.alive.player.network.DeviceApiProvider
 import com.alive.player.network.PopEventPayload
@@ -53,6 +54,13 @@ class PopUploadWorker(
                 dao.markUploaded(pending.map { it.eventId })
                 dao.deleteUploaded()
             } catch (ex: ApiHttpException) {
+                // 410 = this screen was deleted in the admin panel. Decommission —
+                // the queued events belong to a device that no longer exists and the
+                // server would never accept them; re-claiming would resurrect it.
+                if (ex.code == 410) {
+                    DeviceDecommissioner.wipe(applicationContext, "event upload returned 410 — deleted in admin panel")
+                    return@withContext Result.success()
+                }
                 // A rotated JWT (e.g. admin re-claimed/re-paired the device) shows up as
                 // 401/403 with no server-side fix possible except re-claiming. Re-claim
                 // with the same hardwareKey to obtain the new token and loop back to

@@ -6,11 +6,14 @@ import android.net.NetworkCapabilities
 import android.provider.Settings
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.alive.player.BuildConfig
 import com.alive.player.data.AppDatabase
+import com.alive.player.data.DeviceDecommissioner
 import com.alive.player.data.PlanCache
 import com.alive.player.network.ApiHttpException
 import com.alive.player.network.DeviceApiProvider
 import com.alive.player.network.FetchPlanResult
+import com.alive.player.network.NetworkProbe
 import com.alive.player.playback.DecoderCapabilities
 import com.alive.player.settings.DevicePrefs
 import com.alive.player.settings.FetchStatus
@@ -34,6 +37,18 @@ class PlanFetchWorker(
         val dao = AppDatabase.get(applicationContext).planCacheDao()
         val existing = dao.get()
         val lastPlanHash = existing?.etag
+
+        // BEFORE the first https call, not after a successful one: a drifted system
+        // clock fails TLS certificate validation, so a device in that state could
+        // never reach a post-success sync — it just retried forever with a dead
+        // screen. NTP is plain UDP and works regardless, and on Device-Owner
+        // hardware this also puts the system clock right, so the fetch below can
+        // actually succeed. Forced when the last attempt failed, since that is
+        // exactly when a clock problem is worth re-checking immediately.
+        NtpSyncManager.syncIfNeeded(
+            applicationContext,
+            force = prefs.getFetchStatus()?.name == FetchStatus.ERROR.name,
+        )
 
         prefs.setFetchStatus(FetchStatus.FETCHING.also { it.message = "Contacting server…" })
 
@@ -99,9 +114,6 @@ class PlanFetchWorker(
                 }
             }
 
-            // Sync NTP after a successful server round-trip (network is confirmed reachable)
-            NtpSyncManager.sync(applicationContext)
-
             when {
                 result.notModified ->
                     prefs.setFetchStatus(FetchStatus.OK.also {
@@ -122,10 +134,56 @@ class PlanFetchWorker(
 
             Result.success()
         } catch (ex: Exception) {
-            val msg = ex.message?.take(120) ?: ex.javaClass.simpleName
-            prefs.setFetchStatus(FetchStatus.ERROR.also { it.message = msg })
+            // 410 Gone = this screen was deleted in the admin panel. Wipe and return
+            // to pairing; anything else (including 401, which reclaim already tried
+            // to fix) is a normal transient failure.
+            if (ex is ApiHttpException && ex.code == 410) {
+                DeviceDecommissioner.wipe(applicationContext, "plan fetch returned 410 — deleted in admin panel")
+                return@withContext Result.success()
+            }
+            prefs.setFetchStatus(FetchStatus.ERROR.also { it.message = diagnose(ex) })
             if (runAttemptCount < 3) Result.retry() else Result.success()
         }
+    }
+
+    /**
+     * Turns a failure into something the person standing at the screen can act on.
+     *
+     * A rejected certificate is the single most confusing failure this player has: a
+     * filtering proxy and a drifted clock produce the *same* opaque
+     * "Trust anchor for certification path not found", and they need opposite fixes
+     * (whitelist the screen on the router vs. correct the date). A plain-HTTP probe
+     * distinguishes them, because it still gets an answer when TLS cannot.
+     */
+    private fun diagnose(ex: Exception): String {
+        if (!isTlsTrustFailure(ex)) return ex.message?.take(120) ?: ex.javaClass.simpleName
+
+        val probe = NetworkProbe.probe(BuildConfig.API_BASE_URL)
+        return when {
+            probe?.looksIntercepted == true ->
+                "This network is blocking the screen" +
+                    (probe.via?.let { " (proxy: ${it.take(40)})" } ?: "") +
+                    " — allow wearealive.in on the router"
+
+            NtpSyncManager.isClockBadlyWrong(applicationContext) ->
+                "Device date/time is wrong — correct it in TV settings to restore playback"
+
+            else -> "Secure connection rejected — " +
+                (ex.message?.take(80) ?: "server certificate not trusted")
+        }
+    }
+
+    /** Certificate-chain rejection, anywhere in the cause chain. */
+    private fun isTlsTrustFailure(ex: Throwable): Boolean {
+        var cause: Throwable? = ex
+        while (cause != null) {
+            if (cause is javax.net.ssl.SSLHandshakeException ||
+                cause is java.security.cert.CertificateException ||
+                cause is java.security.cert.CertPathValidatorException
+            ) return true
+            cause = cause.cause
+        }
+        return false
     }
 
     /** See [PopUploadWorker.reclaimToken] — same 401/403 re-claim recovery, applied here

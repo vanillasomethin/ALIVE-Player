@@ -1,119 +1,69 @@
-# Signage UX Uplift — Implementation Checklist
+# OTA update prompt-loop fix (2026-08-10)
 
-- [x] 1. QR Code on Pairing Screen (ZXing + two QRs: admin URL + raw key)
-- [x] 2. Restructured Waiting Screen — State Cards (icon/headline/detail per FetchStatus)
-- [x] 3. Download Progress on Waiting Screen (doneCount/totalCount DAO queries + progress bar)
-- [x] 4. Offline Playback Badge (NetworkCallback, offline_badge TextView)
-- [x] 5. Network Indicator on Waiting Screen (network_dot + network_label)
-- [x] 6. Diagnostic Overlay (long-press → PIN → overlay with device info)
-- [x] 7. Enhanced Settings Screen (relative timestamps, network, storage, pending, clear cache)
-- [x] 8. Settings Access from Playback Screen (5-tap on waiting overlay)
+## Bug
+`UpdateCheckWorker` (6h periodic) downloads a newer APK and commits a PackageInstaller
+session unconditionally. On non-device-owner boxes (most of the sideloaded fleet) the
+commit ends in `STATUS_PENDING_USER_ACTION` and `UpdateInstallReceiver` launches the
+system install-confirm dialog over kiosk playback with `FLAG_ACTIVITY_NEW_TASK`.
+Nobody at the TV confirms → version stays old → every 6h cycle re-prompts, stealing
+focus from playback each time. And there is no `MY_PACKAGE_REPLACED` receiver, so when
+an install *is* confirmed, the app dies and never comes back → black screen, no ads.
 
-## Review
-All 8 features implemented across:
-- `app/build.gradle.kts` — ZXing dependency
-- `AndroidManifest.xml` — ACCESS_NETWORK_STATE permission
-- `activity_pairing.xml` — QR row (admin URL + raw key)
-- `PairingActivity.kt` — QR bitmap generation
-- `data/DownloadJobDao.kt` — doneCount() + totalCount()
-- `activity_playback.xml` — status card, network dot, offline badge, diag overlay
-- `PlaybackActivity.kt` — NetworkCallback, updateStatusCard, diag overlay, 5-tap
-- `activity_settings.xml` — network, storage, pending uploads rows + clear cache button
-- `settings/SettingsFragment.kt` — relative timestamps, new rows, clear cache action
+## Design
+Never commit an install session that cannot complete:
+- **Silent-capable** (device owner on S+, or self-installer-of-record on S+ with
+  `UPDATE_PACKAGES_WITHOUT_USER_ACTION`) → commit immediately, install applies itself.
+- **Needs user action** → do NOT commit from the worker. Just download + record
+  "update ready" state. The Settings screen (operator present, reached via MENU key)
+  shows an "Install update" button that performs the commit; the confirm dialog then
+  appears in front of a human, never over playback.
+- `UpdateGate.userActionAllowed` is true only while SettingsActivity is resumed —
+  `UpdateInstallReceiver` uses it as belt-and-braces: a PENDING that leaks through
+  while playback owns the screen is swallowed and recorded, not launched.
+- New `PackageReplacedReceiver` (`MY_PACKAGE_REPLACED`) relaunches playback +
+  reschedules workers after any successful update, so the screen comes back by itself.
+- After the first operator-confirmed self-update the player becomes its own
+  installer-of-record, so on Android 12+ every later update is fully silent.
 
----
-
-# Autostart Hardening + Silent OTA — Implementation Checklist
-
-Goal: close the two real gaps found in the competitive audit — (1) no OEM-proof
-autostart, (2) no working OTA on the sideload-distributed fleet. Decision from
-user: full Device Owner provisioning (existing fleet will be re-enrolled),
-implement both fixes in one pass since they share the same Device Owner base.
-
-## A. Device Owner foundation
-- [x] 1. `AliveDeviceAdminReceiver.kt` — DeviceAdminReceiver subclass
-- [x] 2. `res/xml/device_admin.xml` — policy descriptor (minimal, no special policies needed)
-- [x] 3. AndroidManifest.xml — register receiver w/ BIND_DEVICE_ADMIN + meta-data
-
-## B. Autostart fix (HOME claim, not OEM-intent chasing)
-- [x] 4. AndroidManifest.xml — add CATEGORY_HOME to PairingActivity's intent-filter
-- [x] 5. `OwnerSetup.kt` — once device-owner, silently claim persistent-preferred HOME
-      via `DevicePolicyManager.addPersistentPreferredActivity` (no user prompt)
-- [x] 6. `OemAutostartHelper.kt` — manufacturer-detection fallback (Xiaomi/Realme/
-      OnePlus/Vivo autostart-settings intents) for the pre-enrollment window /
-      defense-in-depth on non-owner installs
-
-## C. Silent OTA
-- [x] 7. studio: `GET /api/device/update-check` — returns latest versionCode/
-      versionName/apkUrl/sha256 from env vars
-- [x] 8. studio: document new endpoint in `ALIVE_PLAYER_API.md`
-- [x] 9. Player: `DeviceApiProvider.checkForUpdate()` — calls the new endpoint
-- [x] 10. Player: `UpdateCheckWorker.kt` + real `UpdateScheduler` (periodic
-      WorkManager, replaces the no-op) — checks version, downloads APK via
-      existing `AssetDownloader` (reused as-is, it's already generic), installs
-      via `PackageInstaller`
-- [x] 11. Silent-install path: API 31+ uses `SessionParams.setRequireUserAction
-      (USER_ACTION_NOT_REQUIRED)` (device-owner only, truly silent). API 26-30
-      has no documented silent-install API for device owner — falls back to the
-      standard confirm-dialog PackageInstaller flow. This is a real OS
-      limitation, not a stub — must be stated plainly, not glossed over.
-- [x] 12. AndroidManifest.xml — REQUEST_INSTALL_PACKAGES permission
-
-## D. Ops
-- [x] 13. `PROVISIONING.md` — zero-touch QR enrollment steps for re-provisioning
-      already-deployed devices into Device Owner mode (factory reset required —
-      operational step, not code)
-
-## Verification
-- [x] `./gradlew compileDebugKotlin` — **could not run**: this sandbox has no
-      Android SDK installed and network policy blocks `dl.google.com` (where
-      AGP/Android SDK artifacts are hosted), so Gradle can't even resolve the
-      `com.android.application` plugin. No prior Gradle/AGP cache exists either.
-      This is an environment limitation, not a code issue. In lieu of a real
-      compile, did a full manual read-through of every new/changed file
-      (manifest, `OwnerSetup.kt`, `AliveDeviceAdminReceiver.kt`,
-      `OemAutostartHelper.kt`, `BootReceiver.kt`, `PairingActivity.kt`,
-      `DeviceApiProvider.kt`/`DeviceApi.kt`, `UpdateCheckWorker.kt`,
-      `UpdateInstallReceiver.kt`, `UpdateScheduler.kt`) cross-checking imports,
-      method signatures against existing call sites (e.g. `AssetDownloader.download`
-      named-arg signature, `DevicePrefs.getDeviceToken()`), API-level guards
-      (`USER_ACTION_NOT_REQUIRED` gated on `SDK_INT >= S`), and manifest
-      component registration. No issues found. **Recommend running a real
-      `./gradlew assembleDebug` in CI or a local Android dev environment before
-      shipping to the fleet.**
-- [x] `npx tsc --noEmit` + `npm run build` clean in studio — both pass,
-      `/api/device/update-check` compiles and builds as a dynamic route.
-- [x] Commit + push both repos to `claude/ecstatic-heisenberg-j93BW`
+## Todo
+- [x] Read update flow, manifest, prefs, settings UI, boot receiver
+- [ ] DevicePrefs: update-ready state (versionCode/name/apkPath + needs-user-action flag)
+- [ ] UpdateGate (settings-visible flag)
+- [ ] UpdateInstaller: shared session commit, silent-eligibility, stale-session abandon, old-APK prune
+- [ ] UpdateCheckWorker: dedupe via state; commit only when completable
+- [ ] UpdateInstallReceiver: gate dialog launch; record state; clear on success
+- [ ] PackageReplacedReceiver + manifest entry; UPDATE_PACKAGES_WITHOUT_USER_ACTION permission
+- [ ] UpdateScheduler.checkNow() one-shot
+- [ ] SettingsActivity: toggle UpdateGate; SettingsFragment/layout: update row + install button
+- [x] Clean build (JDK 17, CI parity)
+- [x] Adversarial multi-lens review of the diff
+- [ ] Re-build + re-verify after applying review fixes
 
 ## Review
-Implemented both fixes on the shared Device Owner foundation, per user
-decision (full-fleet Device Owner re-provisioning, both fixes in one pass):
-
-**Autostart (HOME claim):** `PairingActivity` now also declares a
-`CATEGORY_HOME` intent-filter. Once a device is enrolled as Device Owner,
-`OwnerSetup.onDeviceOwnerReady()` calls `addPersistentPreferredActivity()` to
-silently make it the permanent Home app — no user prompt, and immune to OEM
-autostart/battery-kill restrictions since the OS always relaunches the active
-Home app on boot. Called from `BootReceiver` (every boot, idempotent) and
-`AliveDeviceAdminReceiver.onProfileProvisioningComplete` (right after
-enrollment). `OemAutostartHelper` remains as a manual fallback for the
-pre-enrollment window and for any device that's never re-provisioned.
-
-**Silent OTA:** New `/api/device/update-check` endpoint (studio) reports the
-latest configured release via env vars (no schema change). `UpdateCheckWorker`
-polls it every 6h, reuses `AssetDownloader` unmodified to fetch the APK
-(range-resume + SHA-256 verify), and installs via `PackageInstaller`. On
-Device Owner + API 31+, the install uses `USER_ACTION_NOT_REQUIRED` — fully
-silent. On older API levels, Android has no silent-install API even for
-device owners, so it falls back to the standard confirm dialog
-(`UpdateInstallReceiver` launches it). This is a real platform limitation,
-documented plainly rather than glossed over.
-
-**Ops:** `PROVISIONING.md` documents zero-touch QR enrollment (and the Fire TV
-ADB fallback) for re-provisioning the existing fleet, since both fixes only
-activate once a device is Device Owner.
-
-**Known limitation:** Gradle/Kotlin compilation could not be verified in this
-sandbox (no Android SDK, no network access to Google's Maven repo). Manual
-review of all changed files found no issues, but a real `assembleDebug` build
-should be run before this ships.
+First implementation passed a clean build; the 4-lens adversarial review (19 agents:
+state-machine / Android-platform / kiosk-regression / requirements, each finding
+independently refutation-tested) confirmed 12 findings (9 distinct). All fixed:
+1. (major ×2 lenses) Own abandonSession() fires STATUS_FAILURE_ABORTED into our
+   receiver, misread as operator-cancel → poisons needs-user-action on silent devices.
+   Fixed: session-id recorded before commit; receiver ignores other sessions' statuses.
+2. (critical) Silent install on non-owner installer-of-record boxes (API 29+) killed
+   the app with no legal way to relaunch → dead screen. Fixed: auto-commit now also
+   requires canRelaunchUiAfterInstall (owner / pre-Q / overlay grant); everyone else
+   goes through the operator path.
+3. (critical) On device-owner boxes both the OS HOME-resume and PackageReplacedReceiver
+   relaunched → stacked PlaybackActivities/black screen. Fixed: BootReceiver-style
+   current-HOME guard.
+4. (minor ×2) checkNow one-shot could run concurrently with the periodic worker →
+   same .part staging file corrupted. Fixed: worker-wide Mutex + KEEP policy.
+5. (minor) commit() unserialized across 3 call paths; double-press abandoned the
+   session behind a visible dialog. Fixed: @Synchronized + 10-min in-flight guard +
+   button disabled until rebind.
+6. (minor) Unvalidated (captive-portal) network consumed runs as success → Settings
+   install silently no-oped forever. Fixed: Result.retry().
+7. (minor) Settings could install a server-withdrawn build from stale state. Fixed:
+   Install button always revalidates via checkNow (cached APK reused when current).
+8. (minor) Deleted APKs left assetDao rows → phantom bytes shrank the 2GB LRU media
+   budget. Fixed: prune/clear paths also delete rows.
+9. (minor, declined) Live progress/status observer on the Settings update row —
+   deliberate skip: observeForever on deprecated platform Fragment is fragilty for
+   polish; onResume rebind covers state refresh. Revisit if operators report confusion.
