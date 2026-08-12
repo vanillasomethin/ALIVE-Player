@@ -206,16 +206,76 @@ class PairingActivity : Activity() {
         card(R.id.card_error,   false)
         status("")
 
-        // Device-owner installs already get a silent HOME claim (OwnerSetup);
-        // on a non-owner install, prompt staff once to grant OEM autostart
-        // permission manually so the player survives a restrictive OEM kill.
-        if (!OwnerSetup.isDeviceOwner(this) && OemAutostartHelper.isKnownRestrictiveOem()) {
-            OemAutostartHelper.openAutostartSettings(this)
+        provisioningStep = 0
+        runNextProvisioningStep()
+    }
+
+    // Device-owner installs get a silent HOME claim (OwnerSetup) and no user prompts
+    // are needed at all. Everything else -- which in practice is the whole fleet today,
+    // since these are provisioned via `adb install` over Wi-Fi onto already-set-up
+    // devices, not factory-reset + QR/NFC enrollment -- needs staff to walk through the
+    // same three permissions manually. Sequenced one at a time (each Settings screen
+    // returns here via onActivityResult, or a short delay for the fire-and-forget OEM
+    // screen) rather than fired all at once, so the installer isn't shown a screen on
+    // top of a screen on top of a screen.
+    private var provisioningStep = 0
+
+    private fun runNextProvisioningStep() {
+        if (OwnerSetup.isDeviceOwner(this)) {
+            uiHandler.postDelayed({ startPlayback() }, 2_000)
+            return
         }
+        provisioningStep++
+        when (provisioningStep) {
+            1 -> {
+                if (!isDefaultLauncher()) {
+                    try {
+                        startActivityForResult(Intent(Settings.ACTION_HOME_SETTINGS), REQ_PROVISIONING_STEP)
+                        return
+                    } catch (_: ActivityNotFoundException) { /* fall through to next step */ }
+                }
+            }
+            2 -> {
+                if (OemAutostartHelper.isKnownRestrictiveOem()) {
+                    OemAutostartHelper.openAutostartSettings(this)
+                    uiHandler.postDelayed({ runNextProvisioningStep() }, 1_500)
+                    return
+                }
+            }
+            3 -> {
+                // Without this, aggressive OEM Doze/App-Standby policies can throttle the
+                // foreground service's WorkManager jobs and the watchdog's alarm cadence
+                // over a multi-week unattended deployment.
+                val pm = getSystemService(POWER_SERVICE) as PowerManager
+                if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                    try {
+                        startActivityForResult(
+                            Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                data = Uri.parse("package:$packageName")
+                            },
+                            REQ_PROVISIONING_STEP,
+                        )
+                        return
+                    } catch (_: ActivityNotFoundException) { /* fall through to next step */ }
+                }
+            }
+            else -> {
+                uiHandler.postDelayed({ startPlayback() }, 1_000)
+                return
+            }
+        }
+        runNextProvisioningStep()
+    }
 
-        requestBatteryOptimizationExemptionOnce()
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_PROVISIONING_STEP) runNextProvisioningStep()
+    }
 
-        uiHandler.postDelayed({ startPlayback() }, 2_000)
+    private fun isDefaultLauncher(): Boolean {
+        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolved = packageManager.resolveActivity(homeIntent, 0)
+        return resolved?.activityInfo?.packageName == packageName
     }
 
     private fun showError(message: String) {
@@ -244,27 +304,6 @@ class PairingActivity : Activity() {
         finish()
     }
 
-    /**
-     * One-time nudge, asked while staff still has the remote in hand during setup.
-     * Without this, aggressive OEM Doze/App-Standby policies can throttle the
-     * foreground service's WorkManager jobs and the watchdog's alarm cadence over a
-     * multi-week unattended deployment. Safe to call every pairing — it's a no-op
-     * once granted, since isIgnoringBatteryOptimizations already reflects that.
-     */
-    private fun requestBatteryOptimizationExemptionOnce() {
-        val pm = getSystemService(POWER_SERVICE) as PowerManager
-        if (pm.isIgnoringBatteryOptimizations(packageName)) return
-        try {
-            startActivity(
-                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                    data = Uri.parse("package:$packageName")
-                }
-            )
-        } catch (_: ActivityNotFoundException) {
-            // No Settings app to handle this on some minimal Android TV builds — skip.
-        }
-    }
-
     override fun onDestroy() {
         polling = false
         uiHandler.removeCallbacksAndMessages(null)
@@ -274,5 +313,6 @@ class PairingActivity : Activity() {
 
     companion object {
         private const val POLL_INTERVAL_MS = 5_000L
+        private const val REQ_PROVISIONING_STEP = 9001
     }
 }
