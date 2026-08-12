@@ -575,6 +575,8 @@ class PlaybackEngine(private val context: Context) {
                 startedAtEpochMs = playStartMs,
                 endedAtEpochMs = endMs,
                 durationMs = duration,
+                slotPosition = item.slotPosition,
+                isFiller = item.isFiller,
             )
         )
     }

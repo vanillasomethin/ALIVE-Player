@@ -56,6 +56,11 @@ data class ProofEvent(
     @ColumnInfo(name = "duration_ms") val durationMs: Long,
     @ColumnInfo(name = "uploaded") val uploaded: Boolean = false,
     @ColumnInfo(name = "fail_count") val failCount: Int = 0,
+    // Slot-loop attribution, echoed from the plan item that played (slot-mode stores
+    // only): which loop position, and whether this was a bonus/filler play rather than
+    // a guaranteed booked one. Null/false for ordinary schedule playback.
+    @ColumnInfo(name = "slot_position") val slotPosition: Int? = null,
+    @ColumnInfo(name = "is_filler") val isFiller: Boolean = false,
 )
 
 @Entity(tableName = "incidents")

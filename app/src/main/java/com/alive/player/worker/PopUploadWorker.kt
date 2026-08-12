@@ -43,6 +43,8 @@ class PopUploadWorker(
                     startedAt = Instant.ofEpochMilli(event.startedAtEpochMs).toString(),
                     endedAt = Instant.ofEpochMilli(event.endedAtEpochMs).toString(),
                     durationMs = event.durationMs,
+                    slotPosition = event.slotPosition,
+                    isFiller = event.isFiller,
                 )
             }
 

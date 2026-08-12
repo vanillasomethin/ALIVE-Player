@@ -13,6 +13,10 @@ data class PlanItem(
     val sha256: String? = null,  // stores md5 value from studio
     val ext: String? = null,
     val scheduleId: String? = null,
+    // Slot-loop attribution (slot-mode stores only). Echoed back verbatim in the
+    // proof-of-play event so the server can split guaranteed vs bonus plays.
+    val slotPosition: Int? = null,
+    val isFiller: Boolean = false,
 )
 
 data class Plan(
@@ -86,6 +90,8 @@ fun parsePlan(json: String): Plan {
                     else    -> null
                 },
                 scheduleId = scheduleId,
+                slotPosition = if (o.has("slotPosition")) o.getInt("slotPosition") else null,
+                isFiller = o.optBoolean("isFiller", false),
             )
         }
 

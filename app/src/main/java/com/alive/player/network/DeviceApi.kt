@@ -50,6 +50,9 @@ data class PopEventPayload(
     val startedAt: String,  // ISO
     val endedAt: String,    // ISO
     val durationMs: Long,
+    // Slot-loop attribution (slot-mode stores only) — see PlanItem.
+    val slotPosition: Int? = null,
+    val isFiller: Boolean = false,
 )
 
 data class IncidentPayload(

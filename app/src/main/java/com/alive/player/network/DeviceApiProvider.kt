@@ -142,6 +142,10 @@ class DeviceApiProvider(
                 .put("endedAt", e.endedAt)
                 .put("durationMs", e.durationMs)
             if (e.scheduleId != null) o.put("scheduleId", e.scheduleId)
+            if (e.slotPosition != null) {
+                o.put("slotPosition", e.slotPosition)
+                o.put("isFiller", e.isFiller)
+            }
             arr.put(o)
         }
         postJson("/api/device/events", JSONObject().put("events", arr), deviceToken)
