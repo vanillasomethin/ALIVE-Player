@@ -10,6 +10,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Lets a self-update commit with USER_ACTION_NOT_REQUIRED once this app is its
+         own installer-of-record (first successful self-update onward, Android 12+).
+         Normal permission — granted at install, no runtime prompt. -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
@@ -107,6 +111,17 @@
         <receiver
             android:name="com.alive.player.worker.UpdateInstallReceiver"
             android:exported="false" />
+
+        <!-- Relaunches playback right after an OTA self-update replaces the package —
+             without it a successful install leaves a dead screen until reboot.
+             MY_PACKAGE_REPLACED is a protected broadcast only the system can send. -->
+        <receiver
+            android:name="com.alive.player.receiver.PackageReplacedReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Device Owner: lets the player silently claim HOME and silently install
              OTA updates (PackageInstaller, no confirm dialog, API 31+). Enrolled via

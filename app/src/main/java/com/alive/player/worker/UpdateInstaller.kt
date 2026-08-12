@@ -1,0 +1,144 @@
+package com.alive.player.worker
+
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageInstaller
+import android.os.Build
+import com.alive.player.admin.OwnerSetup
+import java.io.File
+import java.io.FileInputStream
+
+/**
+ * Single place that talks to PackageInstaller for OTA self-updates. All installs —
+ * silent and operator-confirmed alike — flow through UpdateCheckWorker, which is the
+ * only caller of [commit] (the Settings button funnels into it via checkNow so the
+ * server is revalidated before anything installs).
+ *
+ * The contract callers rely on: [commit] is only invoked when the install can
+ * actually complete — either [canInstallSilently] (and the device can relaunch
+ * itself, [canRelaunchUiAfterInstall]), or an operator is in Settings
+ * (UpdateGate.userActionAllowed) ready to see the system confirm dialog. That is
+ * what keeps install prompts from ever appearing over kiosk playback.
+ */
+object UpdateInstaller {
+
+    /**
+     * True when a session committed with USER_ACTION_NOT_REQUIRED will be honoured:
+     * - Device Owner on Android 12+ (zero-touch provisioned fleet), or
+     * - Android 12+ where this app is its own installer-of-record — true from the
+     *   first successful self-update onward — combined with the manifest-declared
+     *   UPDATE_PACKAGES_WITHOUT_USER_ACTION permission.
+     * Everything older/other needs the system confirm dialog.
+     */
+    fun canInstallSilently(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
+        if (OwnerSetup.isDeviceOwner(context)) return true
+        return runCatching {
+            context.packageManager.getInstallSourceInfo(context.packageName)
+                .installingPackageName == context.packageName
+        }.getOrDefault(false)
+    }
+
+    /**
+     * True when, after the install kills every app process, something is guaranteed
+     * to bring playback back up: the HOME claim (device owner), pre-Q background
+     * activity starts, or an overlay grant. An unattended install on any other device
+     * would trade a running ad loop for a dead screen — worse than staying outdated —
+     * so UpdateCheckWorker refuses to auto-commit there and leaves it to the Settings
+     * operator path (a human is present to relaunch if needed).
+     */
+    fun canRelaunchUiAfterInstall(context: Context): Boolean =
+        OwnerSetup.isDeviceOwner(context) ||
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            android.provider.Settings.canDrawOverlays(context)
+
+    /**
+     * Streams [apk] into a fresh PackageInstaller session and commits it. Stale
+     * sessions this app created earlier are abandoned first, so repeated checks can
+     * never pile up sessions (each of which could surface its own prompt).
+     * The result lands in UpdateInstallReceiver.
+     *
+     * Synchronized: the periodic worker, the one-shot worker and the Settings button
+     * can all reach here; unserialized they would abandon each other's live session —
+     * including one whose confirm dialog is on screen. A session committed within the
+     * last 10 minutes is treated as in-flight and left alone entirely; older committed
+     * ones are reclaimed (e.g. a swallowed PENDING nobody will ever answer).
+     */
+    @Synchronized
+    fun commit(context: Context, apk: File) {
+        val installer = context.packageManager.packageInstaller
+
+        val sessions = installer.mySessions
+        val inFlightWindowMs = 10L * 60 * 1000
+        if (sessions.any {
+                it.isCommitted && System.currentTimeMillis() - it.createdMillis < inFlightWindowMs
+            }
+        ) return
+
+        sessions.forEach { info ->
+            runCatching { installer.abandonSession(info.sessionId) }
+        }
+
+        val sessionParams = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && canInstallSilently(context)) {
+            sessionParams.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+        }
+
+        val sessionId = installer.createSession(sessionParams)
+        // Persisted BEFORE commit: the receiver only honours statuses carrying this id,
+        // so ABORTED broadcasts from the sessions abandoned above (or pruned by the OS)
+        // can never be misread as an operator pressing Cancel.
+        com.alive.player.settings.DevicePrefs(context).setPendingInstallSessionId(sessionId)
+        installer.openSession(sessionId).use { session ->
+            FileInputStream(apk).use { input ->
+                session.openWrite("update", 0, apk.length()).use { output ->
+                    input.copyTo(output)
+                    session.fsync(output)
+                }
+            }
+            val statusIntent = Intent(context, UpdateInstallReceiver::class.java)
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                sessionId,
+                statusIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+            )
+            session.commit(pendingIntent.intentSender)
+        }
+    }
+
+    /**
+     * Deletes cached update APKs for versions other than [keep]. Files live at
+     * cache/assets/player-update/<versionCode>/<sha>.apk (AssetDownloader layout),
+     * so pruning siblings of keep's version directory drops superseded downloads.
+     * Also drops each pruned version's assets DB row — download() registers APKs
+     * there, and orphaned rows would keep counting against evictLru's 2GB budget,
+     * evicting real media early.
+     */
+    suspend fun pruneOldUpdates(context: Context, keep: File) {
+        val versionDir = keep.parentFile ?: return
+        val updateRoot = versionDir.parentFile ?: return
+        val assetDao = com.alive.player.data.AppDatabase.get(context).assetDao()
+        updateRoot.listFiles()?.forEach { dir ->
+            if (dir.isDirectory && dir.name != versionDir.name) {
+                runCatching { assetDao.delete(UPDATE_CONTENT_ID, dir.name) }
+                runCatching { dir.deleteRecursively() }
+            }
+        }
+    }
+
+    /** Removes every cached update APK + its assets DB rows — nothing is pending. */
+    suspend fun clearAllUpdates(context: Context) {
+        val cacheRoot = context.getExternalFilesDir("cache") ?: context.cacheDir
+        val updateRoot = File(cacheRoot, "assets/$UPDATE_CONTENT_ID")
+        val assetDao = com.alive.player.data.AppDatabase.get(context).assetDao()
+        updateRoot.listFiles()?.forEach { dir ->
+            runCatching { assetDao.delete(UPDATE_CONTENT_ID, dir.name) }
+        }
+        runCatching { updateRoot.deleteRecursively() }
+    }
+
+    /** AssetDownloader contentId under which update APKs are cached. */
+    const val UPDATE_CONTENT_ID = "player-update"
+}
