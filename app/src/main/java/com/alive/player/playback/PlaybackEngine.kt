@@ -273,7 +273,9 @@ class PlaybackEngine(private val context: Context) {
                 player.prepare()
                 player.playWhenReady = true
                 startStallWatchdog(item)
-                scheduleAdvanceTimer(item)
+                // NB: the slot timer is armed in videoEndListener.onRenderedFirstFrame,
+                // not here — see that method. Arming it at prepare() time chopped the
+                // last ~1s off clips whose slot length equalled their own length.
             }
             "image" -> {
                 showImage(iv, resolvedUri, item)
@@ -346,6 +348,14 @@ class PlaybackEngine(private val context: Context) {
             pendingOldView = null
             val new = playerView ?: return
             transitionViews(old, new)
+            // Arm the slot timer only now — a video's frames don't appear until the first
+            // one renders, ~0.5-1s after prepare() on these boxes. Timed from prepare() (as
+            // it used to be) the timer fired that much before the clip actually finished,
+            // skipping the last ~1s of every video whose slot length matched its own length.
+            // The + grace lets STATE_ENDED (natural end) win for full-length clips, so the
+            // whole video plays; the timer only caps a video deliberately trimmed to a
+            // shorter slot. Guarded on type because this listener is only attached for video.
+            currentItem?.let { if (it.type == "video") scheduleAdvanceTimer(it, it.durationMs + VIDEO_END_GRACE_MS) }
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -437,6 +447,9 @@ class PlaybackEngine(private val context: Context) {
         const val STALL_TIMEOUT_MS = 10_000L
         // Safety margin for showImage()'s fallback timer when Glide never calls back.
         const val IMAGE_LOAD_GRACE_MS = 15_000L
+        // Slack added to a video's slot timer so the clip's own STATE_ENDED (natural end)
+        // wins for full-length videos — the timer then only enforces a deliberate trim.
+        const val VIDEO_END_GRACE_MS = 750L
         // How far a creative's aspect ratio may differ from the panel's before we stop
         // filling and letterbox it instead — i.e. how much of a creative we're willing to
         // crop away in exchange for edge-to-edge coverage. 1.35 ≈ "lose at most a quarter
@@ -589,7 +602,8 @@ class PlaybackEngine(private val context: Context) {
                 player.prepare()
                 player.playWhenReady = true
                 startStallWatchdog(item)
-                scheduleAdvanceTimer(item)
+                // Slot timer armed in onRenderedFirstFrame, not here — see the note in
+                // renderItem()'s video branch and videoEndListener.onRenderedFirstFrame.
             }
             "image" -> {
                 // playerView is never hidden -- see transitionViews()'s doc comment.
