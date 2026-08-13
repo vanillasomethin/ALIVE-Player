@@ -50,6 +50,15 @@ data class PopEventPayload(
     val startedAt: String,  // ISO
     val endedAt: String,    // ISO
     val durationMs: Long,
+    // Slot-loop attribution (slot-mode stores only) — see PlanItem.
+    val slotPosition: Int? = null,
+    val isFiller: Boolean = false,
+)
+
+data class IncidentPayload(
+    val type: String,       // UNCAUGHT_EXCEPTION | STUCK_PLAYBACK | FALLBACK_TRIGGERED
+    val atMs: Long,         // epoch ms the incident was recorded on-device
+    val metadata: String?,  // stack trace excerpt or context, already clamped on insert
 )
 
 data class UpdateInfo(

@@ -1,6 +1,8 @@
 package com.alive.player.network
 
+import com.alive.player.admin.OwnerSetup
 import com.alive.player.settings.DevicePrefs
+import com.alive.player.worker.HeartbeatScheduler
 import com.alive.player.worker.PlanFetchScheduler
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -24,12 +26,17 @@ class AliveMessagingService : FirebaseMessagingService() {
     }
 
     /**
-     * Incoming FCM data message from the dashboard.
-     * type=plan_updated → kick an immediate plan fetch (bypasses the 15-min wait).
+     * Incoming FCM data message from the dashboard — ALIVE's equivalent of Xibo's XMR
+     * command channel (collectNow/reboot/etc), riding on FCM instead of a separate relay.
+     *   plan_updated → kick an immediate plan fetch (bypasses the 15-min wait)
+     *   health_ping  → kick an immediate heartbeat/telemetry report
+     *   reboot       → restart the device now (device-owner installs only; no-ops otherwise)
      */
     override fun onMessageReceived(message: RemoteMessage) {
-        if (message.data["type"] == "plan_updated") {
-            PlanFetchScheduler.scheduleImmediate(applicationContext)
+        when (message.data["type"]) {
+            "plan_updated" -> PlanFetchScheduler.scheduleImmediate(applicationContext)
+            "health_ping"  -> HeartbeatScheduler.scheduleImmediate(applicationContext)
+            "reboot"       -> OwnerSetup.rebootDevice(applicationContext)
         }
     }
 }

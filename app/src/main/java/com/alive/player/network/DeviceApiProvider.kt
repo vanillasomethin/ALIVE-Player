@@ -142,6 +142,10 @@ class DeviceApiProvider(
                 .put("endedAt", e.endedAt)
                 .put("durationMs", e.durationMs)
             if (e.scheduleId != null) o.put("scheduleId", e.scheduleId)
+            if (e.slotPosition != null) {
+                o.put("slotPosition", e.slotPosition)
+                o.put("isFiller", e.isFiller)
+            }
             arr.put(o)
         }
         postJson("/api/device/events", JSONObject().put("events", arr), deviceToken)
@@ -158,6 +162,7 @@ class DeviceApiProvider(
         playbackAliveMs: Long? = null,
         lastStallReason: String? = null,
         lastStallMs: Long? = null,
+        incidents: List<IncidentPayload> = emptyList(),
     ) {
         val telemetry = JSONObject()
             .put("appVersion", com.alive.player.BuildConfig.VERSION_NAME)
@@ -171,6 +176,18 @@ class DeviceApiProvider(
         val payload = JSONObject()
             .put("events", JSONArray())
             .put("telemetry", telemetry)
+        if (incidents.isNotEmpty()) {
+            val arr = JSONArray()
+            for (inc in incidents) {
+                arr.put(
+                    JSONObject()
+                        .put("type", inc.type)
+                        .put("atMs", inc.atMs)
+                        .apply { if (inc.metadata != null) put("metadata", inc.metadata) }
+                )
+            }
+            payload.put("incidents", arr)
+        }
         postJson("/api/device/events", payload, deviceToken)
     }
 

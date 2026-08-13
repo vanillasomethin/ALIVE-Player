@@ -43,4 +43,15 @@ object OwnerSetup {
             ComponentName(context, PairingActivity::class.java),
         )
     }
+
+    /**
+     * Remote-triggered reboot (e.g. an admin-issued FCM `reboot` command). No-ops on
+     * non-owner installs — DevicePolicyManager.reboot() throws SecurityException without
+     * device-owner, and there's no other way to reboot the device programmatically.
+     */
+    fun rebootDevice(context: Context) {
+        if (!isDeviceOwner(context)) return
+        val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return
+        runCatching { dpm.reboot(adminComponent(context)) }
+    }
 }
