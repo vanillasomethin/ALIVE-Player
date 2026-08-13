@@ -26,4 +26,13 @@ object UpdateScheduler {
             periodic,
         )
     }
+
+    /** Stop OTA update checks (e.g. the 5×-BACK kiosk exit, so a routine check doesn't
+     *  kick off an install mid-servicing). Best-effort: a check already mid-install, or
+     *  a PackageInstaller session already committed, still lands — WorkManager
+     *  cancellation is cooperative and can't abort a committed system install.
+     *  Reversed by schedule(). */
+    fun cancel(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(PERIODIC_WORK_NAME)
+    }
 }

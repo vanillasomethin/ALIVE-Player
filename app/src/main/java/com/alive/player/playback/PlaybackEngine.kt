@@ -1,6 +1,7 @@
 package com.alive.player.playback
 
 import android.content.Context
+import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -30,6 +31,10 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.alive.player.settings.NtpSyncManager
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.DataSource
+import com.bumptech.glide.load.engine.GlideException
+import com.bumptech.glide.request.RequestListener
+import com.bumptech.glide.request.target.Target
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -286,12 +291,12 @@ class PlaybackEngine(private val context: Context) {
                 player.prepare()
                 player.playWhenReady = true
                 startStallWatchdog(item)
-                scheduleAdvanceTimer(item)
+                // NB: the slot timer is armed in videoEndListener.onRenderedFirstFrame,
+                // not here — see that method. Arming it at prepare() time chopped the
+                // last ~1s off clips whose slot length equalled their own length.
             }
             "image" -> {
-                Glide.with(context).clear(iv)
-                Glide.with(context).load(resolvedUri).centerCrop().into(iv)
-                scheduleAdvanceTimer(item)
+                showImage(iv, resolvedUri, item)
                 transitionViews(oldView, newView)
             }
             "web" -> {
@@ -361,6 +366,14 @@ class PlaybackEngine(private val context: Context) {
             pendingOldView = null
             val new = playerView ?: return
             transitionViews(old, new)
+            // Arm the slot timer only now — a video's frames don't appear until the first
+            // one renders, ~0.5-1s after prepare() on these boxes. Timed from prepare() (as
+            // it used to be) the timer fired that much before the clip actually finished,
+            // skipping the last ~1s of every video whose slot length matched its own length.
+            // The + grace lets STATE_ENDED (natural end) win for full-length clips, so the
+            // whole video plays; the timer only caps a video deliberately trimmed to a
+            // shorter slot. Guarded on type because this listener is only attached for video.
+            currentItem?.let { if (it.type == "video") scheduleAdvanceTimer(it, it.durationMs + VIDEO_END_GRACE_MS) }
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -450,6 +463,19 @@ class PlaybackEngine(private val context: Context) {
     private companion object {
         const val STALL_POLL_MS    = 2_000L
         const val STALL_TIMEOUT_MS = 10_000L
+        // Safety margin for showImage()'s fallback timer when Glide never calls back.
+        const val IMAGE_LOAD_GRACE_MS = 15_000L
+        // Slack added to a video's slot timer so the clip's own STATE_ENDED (natural end)
+        // wins for full-length videos — the timer then only enforces a deliberate trim.
+        const val VIDEO_END_GRACE_MS = 750L
+        // How far a creative's aspect ratio may differ from the panel's before we stop
+        // filling and letterbox it instead — i.e. how much of a creative we're willing to
+        // crop away in exchange for edge-to-edge coverage. 1.35 ≈ "lose at most a quarter
+        // of one dimension", calibrated against real fleet creatives on a 9:16 slot:
+        // a 3648x5472 (2:3) photo scores 1.19 and fills with a barely-noticeable trim,
+        // while a 512x512 square logo scores 1.78 and would lose 44% of its height —
+        // that one gets letterboxed instead of having its wordmark chopped in half.
+        const val MAX_FILL_ASPECT_RATIO = 1.35f
     }
 
     private fun reloadAndAdvance() {
@@ -461,11 +487,80 @@ class PlaybackEngine(private val context: Context) {
         }
     }
 
-    private fun scheduleAdvanceTimer(item: PlanItem) {
+    private fun scheduleAdvanceTimer(item: PlanItem, delayMs: Long = item.durationMs) {
         cancelAdvanceTimer()
         val runnable = Runnable { reloadAndAdvance() }
         advanceRunnable = runnable
-        mainHandler.postDelayed(runnable, item.durationMs)
+        mainHandler.postDelayed(runnable, delayMs)
+    }
+
+    /**
+     * Renders a still image and starts its slot timer only once the bitmap is actually on
+     * screen. Glide decodes asynchronously, so starting the timer at request time (what
+     * this used to do) billed the decode to the image's own slot: measured on the
+     * HiSilicon bench panel, a 10s photo was visible for barely 3-4s. Worse, the cleared
+     * ImageView is transparent and playerView is never hidden (see transitionViews), so
+     * during the decode the PREVIOUS video kept showing through — the slot looked like it
+     * belonged to the wrong creative.
+     *
+     * Scaling adapts to how badly the creative's shape matches the panel, because a fixed
+     * choice is wrong half the time: centerCrop everywhere silently chopped the edges off
+     * a landscape photo shown on a portrait screen, while fitCenter everywhere letterboxed
+     * near-correct creatives into a small island of content surrounded by black.
+     * So: fill (crop) while the mismatch is mild, and only fall back to letterboxing once
+     * filling would hide more of the creative than MAX_FILL_ASPECT_RATIO allows.
+     *
+     * A safety timer (slot + grace) is armed up front so a broken or never-returning load
+     * can't stall the playlist forever; the real timer replaces it on the callback.
+     */
+    private fun showImage(iv: ImageView, uri: android.net.Uri, item: PlanItem) {
+        Glide.with(context).clear(iv)
+        scheduleAdvanceTimer(item, item.durationMs + IMAGE_LOAD_GRACE_MS)
+        Glide.with(context)
+            .load(uri)
+            .listener(object : RequestListener<Drawable> {
+                override fun onLoadFailed(
+                    e: GlideException?, model: Any?, target: Target<Drawable>, isFirstResource: Boolean,
+                ): Boolean {
+                    // Don't hold the slot open for an image that will never appear.
+                    scheduleAdvanceTimer(item, 0L)
+                    return false
+                }
+
+                override fun onResourceReady(
+                    resource: Drawable, model: Any, target: Target<Drawable>?,
+                    dataSource: DataSource, isFirstResource: Boolean,
+                ): Boolean {
+                    // post, not inline: the ImageView starts out GONE, so on the first
+                    // showing this callback can run before it has ever been measured —
+                    // width/height are 0 and the fit decision would be made blind.
+                    iv.post { iv.scaleType = chooseScaleType(iv, resource) }
+                    // Pixels are up now — give the creative its full, honest duration.
+                    scheduleAdvanceTimer(item)
+                    return false
+                }
+            })
+            .into(iv)
+    }
+
+    /**
+     * CENTER_CROP (fill the panel) unless the creative's aspect ratio differs from the
+     * panel's by more than MAX_FILL_ASPECT_RATIO, in which case FIT_CENTER so a badly
+     * mismatched creative is still shown whole rather than reduced to a cropped sliver.
+     */
+    private fun chooseScaleType(iv: ImageView, d: Drawable): ImageView.ScaleType {
+        val vw = iv.width.toFloat()
+        val vh = iv.height.toFloat()
+        val iw = d.intrinsicWidth.toFloat()
+        val ih = d.intrinsicHeight.toFloat()
+        // Unknown geometry (unmeasured view, unsized drawable): letterbox. Cropping blind
+        // risks chopping a paid creative in half, which is far worse than black bars.
+        if (vw <= 0f || vh <= 0f || iw <= 0f || ih <= 0f) return ImageView.ScaleType.FIT_CENTER
+        val viewAspect = vw / vh
+        val imgAspect  = iw / ih
+        val mismatch = maxOf(viewAspect / imgAspect, imgAspect / viewAspect)
+        return if (mismatch <= MAX_FILL_ASPECT_RATIO) ImageView.ScaleType.CENTER_CROP
+               else ImageView.ScaleType.FIT_CENTER
     }
 
     private fun cancelAdvanceTimer() {
@@ -525,16 +620,15 @@ class PlaybackEngine(private val context: Context) {
                 player.prepare()
                 player.playWhenReady = true
                 startStallWatchdog(item)
-                scheduleAdvanceTimer(item)
+                // Slot timer armed in onRenderedFirstFrame, not here — see the note in
+                // renderItem()'s video branch and videoEndListener.onRenderedFirstFrame.
             }
             "image" -> {
                 // playerView is never hidden -- see transitionViews()'s doc comment.
                 iv.visibility = android.view.View.VISIBLE
                 wv.visibility = android.view.View.GONE
 
-                Glide.with(context).clear(iv)
-                Glide.with(context).load(resolvedUri).centerCrop().into(iv)
-                scheduleAdvanceTimer(item)
+                showImage(iv, resolvedUri, item)
             }
             "web" -> {
                 iv.visibility = android.view.View.GONE

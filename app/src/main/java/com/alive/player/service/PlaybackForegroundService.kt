@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.Binder
 import android.os.Build
@@ -60,7 +61,20 @@ class PlaybackForegroundService : Service() {
 
     override fun onBind(intent: Intent): IBinder = binder
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Stop requests come in as a normal START (see requestStop) so onCreate's
+        // startForeground() always runs first — stopService() while the
+        // startForegroundService() promise is still outstanding crashes the app with
+        // RemoteServiceException ~5s later. Same hazard fixed in WatchdogService.
+        if (intent?.action == ACTION_STOP) {
+            // See WatchdogService: onCreate only runs on first start, so settle this
+            // start's promise explicitly before stopping.
+            startForeground(1, buildNotification())
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        return START_STICKY
+    }
 
     override fun onDestroy() {
         heartbeatJob?.cancel()
@@ -98,5 +112,13 @@ class PlaybackForegroundService : Service() {
 
     companion object {
         private const val CHANNEL_ID = "alive_playback"
+        private const val ACTION_STOP = "com.alive.player.action.PLAYBACK_STOP"
+
+        /** Stop playback without racing this service's own startup — see onStartCommand. */
+        fun requestStop(context: Context) {
+            context.startForegroundService(
+                Intent(context, PlaybackForegroundService::class.java).setAction(ACTION_STOP)
+            )
+        }
     }
 }

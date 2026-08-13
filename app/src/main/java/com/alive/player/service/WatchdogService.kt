@@ -44,7 +44,25 @@ class WatchdogService : Service() {
         handler.postDelayed(checkRunnable, CHECK_INTERVAL_MS)
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Stop requests arrive as a normal START (see requestStop) rather than
+        // stopService(), so onCreate's startForeground() above always runs first and
+        // settles the startForegroundService() promise. Calling stopService() while
+        // that promise is still outstanding — i.e. before this process has finished
+        // spawning — makes the system throw RemoteServiceException into the app about
+        // five seconds later, crashing it. Reproduced on a HiSilicon panel by firing
+        // the kiosk exit a few seconds after a cold start.
+        if (intent?.action == ACTION_STOP) {
+            // startForeground() again, unconditionally: onCreate only runs for the FIRST
+            // start, so when this service is already alive nothing else would settle the
+            // promise created by this particular startForegroundService() call. Calling
+            // it on an already-foreground service just refreshes the notification.
+            startForeground(NOTIF_ID, buildNotification())
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        return START_STICKY
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -63,9 +81,15 @@ class WatchdogService : Service() {
         // dead) — kill it outright and let BootReceiver/HOME-relaunch/our own restart
         // bring it back clean rather than trying to nudge a possibly-corrupted state.
         Process.killProcess(mainPid)
-        applicationContext.startForegroundService(
-            Intent(applicationContext, PlaybackForegroundService::class.java)
-        )
+        // runCatching: on Android 15 a background FGS start can throw
+        // ForegroundServiceStartNotAllowedException on non-owner installs. Crashing
+        // here would START_STICKY-restart this service into a perpetual kill/crash
+        // loop; failing quietly leaves recovery to BootReceiver/HOME-relaunch instead.
+        runCatching {
+            applicationContext.startForegroundService(
+                Intent(applicationContext, PlaybackForegroundService::class.java)
+            )
+        }
     }
 
     private fun findMainProcessPid(): Int? {
@@ -106,9 +130,17 @@ class WatchdogService : Service() {
         private const val NOTIF_ID = 2
         private const val CHECK_INTERVAL_MS = 20_000L
         private const val STALE_THRESHOLD_MS = 90_000L
+        private const val ACTION_STOP = "com.alive.player.action.WATCHDOG_STOP"
 
         fun ensureRunning(context: Context) {
             context.startForegroundService(Intent(context, WatchdogService::class.java))
+        }
+
+        /** Shut the watchdog down without racing its own startup — see onStartCommand. */
+        fun requestStop(context: Context) {
+            context.startForegroundService(
+                Intent(context, WatchdogService::class.java).setAction(ACTION_STOP)
+            )
         }
     }
 }

@@ -41,5 +41,8 @@ object HeartbeatScheduler {
                 .setConstraints(networkConstraint)
                 .build(),
         )
+    /** Stop the periodic heartbeat (e.g. the 5×-BACK kiosk exit). Reversed by schedule(). */
+    fun cancel(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(HEARTBEAT_WORK_NAME)
     }
 }

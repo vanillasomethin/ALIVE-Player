@@ -49,4 +49,11 @@ object PlanFetchScheduler {
             immediate,
         )
     }
+
+    /** Stop plan polling (e.g. the 5×-BACK kiosk exit). Reversed by schedule(). */
+    fun cancel(context: Context) {
+        val wm = WorkManager.getInstance(context)
+        wm.cancelUniqueWork(PERIODIC_WORK_NAME)
+        wm.cancelUniqueWork(IMMEDIATE_WORK_NAME)
+    }
 }

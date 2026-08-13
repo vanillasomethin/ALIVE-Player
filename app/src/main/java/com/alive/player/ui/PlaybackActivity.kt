@@ -2,10 +2,12 @@ package com.alive.player.ui
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -34,12 +36,17 @@ import android.widget.Toast
 import androidx.media3.ui.PlayerView
 import com.alive.player.BuildConfig
 import com.alive.player.R
+import com.alive.player.admin.AliveDeviceAdminReceiver
+import com.alive.player.admin.OwnerSetup
 import com.alive.player.data.AppDatabase
 import com.alive.player.service.PlaybackForegroundService
+import com.alive.player.service.WatchdogService
 import com.alive.player.settings.DevicePrefs
 import com.alive.player.settings.FetchStatus
 import com.alive.player.settings.SettingsActivity
+import com.alive.player.worker.HeartbeatScheduler
 import com.alive.player.worker.PlanFetchScheduler
+import com.alive.player.worker.UpdateScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -103,6 +110,13 @@ class PlaybackActivity : Activity() {
     // Settings once content is actively playing.
     private var selectPressCount = 0
     private var lastSelectPressMs = 0L
+
+    // Kiosk EXIT hatch: 5 distinct BACK presses inside one EXIT_BACK_WINDOW_MS window
+    // (anchored at the burst's FIRST press) → tear the kiosk down (see exitKiosk).
+    // Counted in dispatchKeyEvent rather than onBackPressed so it fires even while
+    // kioskKeyLockEnabled swallows BACK. Auto-repeat events (held button) are ignored.
+    private var backPressCount = 0
+    private var firstBackPressMs = 0L
 
     // Cached so dispatchKeyEvent never touches SharedPreferences (main thread, fires on
     // every key press). Refreshed by the 30s plan poll below.
@@ -291,9 +305,25 @@ class PlaybackActivity : Activity() {
         uiHandler.post(planPollRunnable)
         uiHandler.post(downloadPollRunnable)
 
+        // Resume full kiosk whenever playback is (re)opened — this is what makes the
+        // 5×-BACK exit "temporary": launching from the apps menu re-claims HOME and
+        // re-enables the periodic workers that exitKiosk() tore down. All idempotent,
+        // so it's a harmless no-op on a normal (never-exited) launch.
+        resumeKioskGuards()
+
         val serviceIntent = Intent(this, PlaybackForegroundService::class.java)
         startForegroundService(serviceIntent)
         bindService(serviceIntent, connection, BIND_AUTO_CREATE)
+    }
+
+    /** Re-assert the HOME claim + periodic workers. Idempotent; reverses exitKiosk(). */
+    private fun resumeKioskGuards() {
+        runCatching { OwnerSetup.onDeviceOwnerReady(this) }
+        runCatching {
+            HeartbeatScheduler.schedule(this)
+            PlanFetchScheduler.schedule(this)
+            UpdateScheduler.schedule(this)
+        }
     }
 
     // Many budget/OEM Android TV panels accept requestedOrientation without physically
@@ -592,11 +622,12 @@ class PlaybackActivity : Activity() {
      * Fully preventing that needs startLockTask()/setLockTaskPackages() — a bigger,
      * separate change not included here.
      *
-     * MENU is the deliberate exception: it always opens Settings (see below), since
-     * actually exiting to the Android home screen doesn't work cleanly here anyway —
-     * PairingActivity is the registered HOME app and immediately relaunches this
-     * Activity on a paired device, so Settings is the one screen that's actually
-     * reachable as an "exit" from playback.
+     * Two deliberate exceptions punch through the lock:
+     *   • MENU always opens Settings (see below).
+     *   • BACK pressed 5× within EXIT_BACK_WINDOW_MS runs exitKiosk(), which unwinds the
+     *     HOME claim + services + workers and drops to the Android launcher — the one
+     *     path that genuinely leaves playback (a single HOME just bounces off the HOME
+     *     claim; Settings is only a sub-screen). Reopening the app resumes kiosk.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
@@ -625,7 +656,42 @@ class PlaybackActivity : Activity() {
                     startActivity(Intent(this, SettingsActivity::class.java))
                     return true
                 }
-                KeyEvent.KEYCODE_BACK,
+                KeyEvent.KEYCODE_BACK -> {
+                    // 5 distinct presses within one window is the deliberate EXIT gesture.
+                    // Counted BEFORE the kiosk swallow below so it works even when the key
+                    // lock is on. repeatCount > 0 events are key auto-repeat from a HELD
+                    // button (~500ms then every ~50ms on IR/BLE/CEC remotes) — never count
+                    // those, or holding BACK for one second would tear the kiosk down.
+                    if (event.repeatCount == 0) {
+                        val now = System.currentTimeMillis()
+                        // Window anchored at the burst's FIRST press: 5 presses must all
+                        // land inside EXIT_BACK_WINDOW_MS. (Anchoring on the previous
+                        // press instead would let slow presses 2.9s apart accumulate to
+                        // an exit over ~12s — an accidental-trigger vector.)
+                        if (backPressCount == 0 || now - firstBackPressMs > EXIT_BACK_WINDOW_MS) {
+                            backPressCount = 0
+                            firstBackPressMs = now
+                        }
+                        if (++backPressCount >= EXIT_BACK_PRESSES) {
+                            backPressCount = 0
+                            exitKiosk()
+                            return true
+                        }
+                        // Visible feedback from the 3rd press: makes the gesture
+                        // discoverable for technicians and warns bystanders idly
+                        // pressing a silently-swallowed key before anything drastic.
+                        if (backPressCount >= 3) {
+                            Toast.makeText(
+                                this,
+                                "Press BACK ${EXIT_BACK_PRESSES - backPressCount} more times to exit playback",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    }
+                    // Swallow during playback so a stray BACK can't navigate away
+                    // (same kiosk hardening as the other nav keys below).
+                    if (kioskKeyLockEnabled) return true
+                }
                 KeyEvent.KEYCODE_HOME,
                 KeyEvent.KEYCODE_SEARCH,
                 KeyEvent.KEYCODE_APP_SWITCH ->
@@ -637,5 +703,85 @@ class PlaybackActivity : Activity() {
             }
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    /**
+     * The 5×-BACK escape hatch: fully tear the kiosk down so a technician can reach the
+     * Android launcher, and make sure nothing pulls the app back to the foreground.
+     *
+     * Three layers keep this app in front and must ALL be undone (order matters):
+     *   1. the Device-Owner HOME claim (OwnerSetup) — otherwise HOME just relaunches us
+     *      and the launcher is never visible;
+     *   2. WatchdogService — otherwise it resurrects playback ~90s after the heartbeat
+     *      writer stops (see WatchdogService.STALE_THRESHOLD_MS);
+     *   3. PlaybackForegroundService — the actual playback, wakelock and heartbeat writer.
+     * The plan-fetch and update workers are cancelled too, so UpdateCheckWorker can't
+     * re-claim HOME or OTA-relaunch while the device is being serviced (best-effort: an
+     * install already committed to PackageInstaller still lands). The server HEARTBEAT
+     * deliberately KEEPS running: it never starts services or activities, and it keeps
+     * the exited device visible on the dashboard — lastSeen stays fresh while
+     * playbackAliveAt goes stale, which is exactly the existing frozen-screen signal, so
+     * ops can tell "exited/serviced" apart from "power cut". (An FCM plan_updated push
+     * can still enqueue one plan fetch while exited; it's background-only and accepted.)
+     *
+     * This is deliberately temporary: reopening the app from the apps menu re-runs
+     * resumeKioskGuards() and a reboot re-runs BootReceiver, both of which restore kiosk.
+     */
+    private fun exitKiosk() {
+        // 1. Relinquish the persistent HOME claim (device-owner only; no-op otherwise).
+        runCatching {
+            if (OwnerSetup.isDeviceOwner(this)) {
+                val dpm = getSystemService(DevicePolicyManager::class.java)
+                val admin = ComponentName(this, AliveDeviceAdminReceiver::class.java)
+                dpm?.clearPackagePersistentPreferredActivities(admin, packageName)
+            }
+        }
+        // 1b. Also purge any USER "Always"-choice record pointing HOME at us — a past
+        //     home-picker choice writes a preferred-activity entry that the DPM clear
+        //     above does NOT touch, and it would bounce HOME straight back into the app,
+        //     permanently defeating this hatch on that unit. Legal for our own package.
+        runCatching { packageManager.clearPackagePreferredActivities(packageName) }
+        // 2. Stop the cross-process watchdog first, so it can't restart playback after (3).
+        //    requestStop, not stopService: stopping a foreground service whose
+        //    startForegroundService() promise is still outstanding (process still
+        //    spawning) crashes the app with RemoteServiceException ~5s later — hit
+        //    for real on a HiSilicon panel when exiting shortly after a cold start.
+        runCatching { WatchdogService.requestStop(this) }
+        // 3. Stop playback: unbind, then stop the foreground service (its onDestroy releases
+        //    the wakelock and stops the engine + the process-heartbeat writer).
+        if (bound) { runCatching { unbindService(connection) }; bound = false }
+        runCatching { PlaybackForegroundService.requestStop(this) }
+        // 4. Cancel plan-fetch + update workers (HeartbeatScheduler stays — see kdoc).
+        runCatching { PlanFetchScheduler.cancel(this) }
+        runCatching { UpdateScheduler.cancel(this) }
+        // 5. Drop to the real Android launcher. Target it EXPLICITLY: our own manifest
+        //    HOME filter still exists, so an implicit HOME intent would show the system
+        //    home-picker on the signage screen (and an "Always → ALIVE" choice there is
+        //    the trap step 1b cleans up). Resolve a HOME activity in another package and
+        //    launch it directly; fall back to the implicit intent only if none exists.
+        runCatching {
+            val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            // Flag 0, NOT MATCH_DEFAULT_ONLY: HOME apps resolve by CATEGORY_HOME and many
+            // OEM TV launchers don't also declare CATEGORY_DEFAULT, so MATCH_DEFAULT_ONLY
+            // silently drops them — leaving only our own PairingActivity, which sends the
+            // fallback implicit intent straight into the "Select Home app" picker on the
+            // signage screen (observed on HiSilicon/selenview boxes). Verified on-device.
+            val launcher = packageManager
+                .queryIntentActivities(homeIntent, 0)
+                .firstOrNull { it.activityInfo?.packageName != packageName }
+                ?.activityInfo
+            startActivity(
+                Intent(homeIntent).apply {
+                    if (launcher != null) setClassName(launcher.packageName, launcher.name)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+            )
+        }
+        finishAffinity()
+    }
+
+    private companion object {
+        const val EXIT_BACK_PRESSES = 5
+        const val EXIT_BACK_WINDOW_MS = 3_000L
     }
 }
