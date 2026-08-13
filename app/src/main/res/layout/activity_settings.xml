@@ -251,6 +251,45 @@
                     android:textSize="14sp"
                     android:fontFamily="@font/poppins_regular" />
 
+                <!-- Operator servicing: open the Android system settings without leaving the
+                     kiosk (change Wi-Fi, check for device updates). Both targets are on the
+                     Device-Owner lock-task allowlist, so they open even while playback is
+                     pinned. BACK returns to playback. -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="12dp">
+
+                    <Button
+                        android:id="@+id/btn_wifi_settings"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:text="Wi-Fi settings"
+                        android:textColor="@color/alive_white"
+                        android:textSize="13sp"
+                        android:fontFamily="@font/poppins_bold"
+                        android:paddingStart="24dp"
+                        android:paddingEnd="24dp"
+                        android:background="@drawable/bg_ghost_button"
+                        android:stateListAnimator="@null" />
+
+                    <Button
+                        android:id="@+id/btn_android_settings"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:text="Android settings"
+                        android:textColor="@color/alive_white"
+                        android:textSize="13sp"
+                        android:fontFamily="@font/poppins_bold"
+                        android:paddingStart="24dp"
+                        android:paddingEnd="24dp"
+                        android:layout_marginStart="10dp"
+                        android:background="@drawable/bg_ghost_button"
+                        android:stateListAnimator="@null" />
+
+                </LinearLayout>
+
             </LinearLayout>
 
             <!-- Storage row -->

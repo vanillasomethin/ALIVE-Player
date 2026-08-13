@@ -316,6 +316,29 @@ class PlaybackActivity : Activity() {
         bindService(serviceIntent, connection, BIND_AUTO_CREATE)
     }
 
+    override fun onResume() {
+        super.onResume()
+        enterLockTaskIfOwner()
+    }
+
+    /**
+     * Lock-task (kiosk pinning) — Device-Owner installs only. Pins this task so
+     * HOME/RECENTS can't leave it, with no consent toast (the package is allowlisted
+     * by OwnerSetup.setLockTaskPackages, which resumeKioskGuards has already run by
+     * the time onResume fires). No-op on non-owner installs. exitKiosk() unpins, so
+     * the 5×BACK escape and the in-app Settings buttons (allowlisted packages) keep
+     * working. Note: at least one Google-TV OEM build does not resume lock task
+     * across a reboot — there this pins at runtime but boot still shows the OEM
+     * launcher briefly until BootReceiver relaunches playback.
+     */
+    private fun enterLockTaskIfOwner() {
+        if (!OwnerSetup.isDeviceOwner(this)) return
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager ?: return
+        if (am.lockTaskModeState == android.app.ActivityManager.LOCK_TASK_MODE_NONE) {
+            runCatching { startLockTask() }
+        }
+    }
+
     /** Re-assert the HOME claim + periodic workers. Idempotent; reverses exitKiosk(). */
     private fun resumeKioskGuards() {
         runCatching { OwnerSetup.onDeviceOwnerReady(this) }
@@ -656,6 +679,29 @@ class PlaybackActivity : Activity() {
                     startActivity(Intent(this, SettingsActivity::class.java))
                     return true
                 }
+                KeyEvent.KEYCODE_VOLUME_UP,
+                KeyEvent.KEYCODE_VOLUME_DOWN,
+                KeyEvent.KEYCODE_VOLUME_MUTE -> {
+                    // Handle volume explicitly rather than trusting the fall-through:
+                    // some OEM builds route volume through their launcher, and lock-task
+                    // mode can suppress the system volume handling entirely — either way
+                    // the operator's volume buttons must always work during playback.
+                    // Auto-repeats deliberately count here (holding = keep adjusting).
+                    val am = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+                    val dir = when (event.keyCode) {
+                        KeyEvent.KEYCODE_VOLUME_UP   -> android.media.AudioManager.ADJUST_RAISE
+                        KeyEvent.KEYCODE_VOLUME_DOWN -> android.media.AudioManager.ADJUST_LOWER
+                        else                         -> android.media.AudioManager.ADJUST_TOGGLE_MUTE
+                    }
+                    runCatching {
+                        am.adjustStreamVolume(
+                            android.media.AudioManager.STREAM_MUSIC,
+                            dir,
+                            android.media.AudioManager.FLAG_SHOW_UI,
+                        )
+                    }
+                    return true
+                }
                 KeyEvent.KEYCODE_BACK -> {
                     // 5 distinct presses within one window is the deliberate EXIT gesture.
                     // Counted BEFORE the kiosk swallow below so it works even when the key
@@ -728,6 +774,9 @@ class PlaybackActivity : Activity() {
      * resumeKioskGuards() and a reboot re-runs BootReceiver, both of which restore kiosk.
      */
     private fun exitKiosk() {
+        // 0. Unpin first: while lock-task is active the HOME launch below would be
+        //    blocked and the screen would stay pinned to this task.
+        runCatching { stopLockTask() }
         // 1. Relinquish the persistent HOME claim (device-owner only; no-op otherwise).
         runCatching {
             if (OwnerSetup.isDeviceOwner(this)) {

@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.app.Fragment
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
@@ -41,6 +42,19 @@ class SettingsFragment : Fragment() {
 
         view.findViewById<Button>(R.id.reset_button).setOnClickListener { confirmReset() }
         view.findViewById<Button>(R.id.clear_cache_button).setOnClickListener { confirmClearCache() }
+
+        // Operator servicing: jump to Android Wi-Fi / system settings without leaving the
+        // kiosk (change network, check for device updates). NEW_TASK so it launches cleanly
+        // from here; fall back to the top-level Settings if the specific screen is absent on
+        // this OEM build. These packages are on the Device-Owner lock-task allowlist
+        // (OwnerSetup), so they open even while playback is pinned. BACK returns to playback.
+        view.findViewById<Button>(R.id.btn_wifi_settings).setOnClickListener {
+            runCatching { activity?.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                .onFailure { runCatching { activity?.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
+        }
+        view.findViewById<Button>(R.id.btn_android_settings).setOnClickListener {
+            runCatching { activity?.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        }
 
         val btnPortrait = view.findViewById<Button>(R.id.btn_orientation_portrait)
         val btnReverse  = view.findViewById<Button>(R.id.btn_orientation_reverse)
