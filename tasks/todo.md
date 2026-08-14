@@ -67,3 +67,38 @@ independently refutation-tested) confirmed 12 findings (9 distinct). All fixed:
 9. (minor, declined) Live progress/status observer on the Settings update row —
    deliberate skip: observeForever on deprecated platform Fragment is fragilty for
    polish; onResume rebind covers state refresh. Revisit if operators report confusion.
+
+---
+
+# Stacked-PlaybackActivity poller outage fix (2026-08-14)
+
+## Bug
+Reproduced live on the Foxsky/KTC HiSilicon TV: three PlaybackActivity instances
+stacked in one task (no launchMode; every launcher/monkey relaunch adds one).
+Each instance keeps running downloadPollRunnable while backgrounded (callbacks only
+removed in onDestroy). The poller kicked `engine.startLoop()` whenever ITS OWN
+waitingOverlay was VISIBLE — but onWaiting/onPlaying are single vars on the shared
+service engine, so a buried instance's overlay stays frozen VISIBLE and it kicks
+startLoop() every 5s forever. startLoop() reset currentItemIndex=0 → screen replays
+the first 5s of item 0 indefinitely (ExoPlayer Init/Release every 5.000s, no errors).
+
+## Todo
+- [x] Manifest: `android:launchMode="singleTask"` on PlaybackActivity (+ onNewIntent
+      re-asserts kiosk guards on instance reuse)
+- [x] PlaybackActivity: pollers start in onStart / removed in onStop (not onDestroy),
+      so a STOPPED instance can never poll
+- [x] PlaybackActivity: download poller kicks on `engine.isWaitingForContent`
+      (shared engine truth), never the activity's own overlay view
+- [x] PlaybackEngine: new `isWaitingForContent` state (set on waiting/no-content paths,
+      cleared on render/stop)
+- [x] PlaybackEngine: startLoop() no longer resets currentItemIndex — resumes from the
+      current index (modulo list size), so a legitimate kick doesn't snap to item 0
+- [x] Clean build (generic + kodak flavors)
+- [x] Device test on the HiSilicon bench panel (192.168.15.156, APK 999320-debug):
+      3 consecutive relaunches all delivered to the SAME ActivityRecord (4c0ad9f) —
+      no stacking; 90s logcat cadence cycles 5.4s→11.3s→5.8s→5.5s repeatedly (all 4
+      playlist items, incl. the 11s one) — no 5.000s item-0 reset signature. One
+      transient "Video error 2001: Source error" recovered as designed (evict+advance).
+      Mid-test the app vanished: logcat shows two external force-stops (someone using
+      the TV's selenview settings at the bench) — not a crash; relaunched, cadence
+      healthy again. NOT committed — tree also holds unrelated update-gate WIP.

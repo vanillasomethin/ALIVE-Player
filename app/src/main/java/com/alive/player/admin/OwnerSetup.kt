@@ -42,5 +42,20 @@ object OwnerSetup {
             homeFilter,
             ComponentName(context, PairingActivity::class.java),
         )
+
+        // Lock-task (kiosk pinning) allowlist: PlaybackActivity calls startLockTask()
+        // when running under Device Owner, which pins the app in front (no HOME/RECENTS
+        // escape) and — on reboot while pinned — boots the device back into the pinned
+        // task instead of the launcher, eliminating the Google-TV home flash that the
+        // (ignored-on-Google-TV) HOME claim above can't. The TV Settings package is
+        // allowlisted too: lock task blocks launching any non-allowlisted package, and
+        // the in-app "Wi-Fi settings"/"Android settings" servicing buttons must still
+        // open while pinned.
+        runCatching {
+            dpm.setLockTaskPackages(
+                admin,
+                arrayOf(context.packageName, "com.android.tv.settings"),
+            )
+        }
     }
 }

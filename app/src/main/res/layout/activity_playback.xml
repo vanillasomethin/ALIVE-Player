@@ -35,6 +35,22 @@
             app:surface_type="texture_view"
             app:keep_content_on_player_reset="true" />
 
+        <!-- Second video surface for double-buffered playback: while one clip plays, the
+             next is prepared here (covered, still VISIBLE so it decodes its first frame),
+             then brought to front at the boundary so the swap is instant instead of
+             freezing on the finished clip's last frame. Both player surfaces sit below
+             image_view/web_view; PlaybackEngine.transitionViews() decides which of the two
+             is frontmost. Same never-GONE rule as player_view — hidden only by z-order. -->
+        <androidx.media3.ui.PlayerView
+            android:id="@+id/player_view_b"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="visible"
+            app:use_controller="false"
+            app:resize_mode="fit"
+            app:surface_type="texture_view"
+            app:keep_content_on_player_reset="true" />
+
         <ImageView
             android:id="@+id/image_view"
             android:layout_width="match_parent"

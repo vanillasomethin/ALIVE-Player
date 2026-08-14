@@ -55,6 +55,33 @@ android {
         buildConfig = true
     }
 
+    // Per-TV-model builds. Same applicationId/signing/server across all of them (so
+    // pairing, OTA and the backend behave identically) — flavors exist only to carry
+    // device-specific tuning via BuildConfig and to emit separately-named APKs
+    // (app-<flavor>-<buildType>.apk) so each panel family gets its own artifact.
+    //
+    //   DEVICE_PROFILE       — read at runtime for any per-panel branch.
+    //   DOUBLE_BUFFER_VIDEO  — prepare the next clip on a 2nd surface for a gapless cut.
+    //                          Needs two concurrent AVC decoders; OFF where the panel has
+    //                          one (Realtek/SPPL "Kodak"), where a 2nd decoder contends
+    //                          with the playing one and makes boundary stalls worse
+    //                          (measured on-device 2026-08-11). EXPERIMENTAL — leave off
+    //                          until validated on the specific panel.
+    flavorDimensions += "device"
+    productFlavors {
+        create("generic") {
+            dimension = "device"
+            isDefault = true
+            buildConfigField("String", "DEVICE_PROFILE", "\"generic\"")
+            buildConfigField("Boolean", "DOUBLE_BUFFER_VIDEO", "false")
+        }
+        create("kodak") {
+            dimension = "device"
+            buildConfigField("String", "DEVICE_PROFILE", "\"kodak\"")
+            buildConfigField("Boolean", "DOUBLE_BUFFER_VIDEO", "false")
+        }
+    }
+
     buildTypes {
         debug {
             // Override via local.properties: demoMode=true  (default: false → real backend)

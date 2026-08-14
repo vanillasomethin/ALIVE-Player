@@ -61,10 +61,18 @@
         <!--
             configChanges declared so requestedOrientation rotates without recreating the
             Activity — the foreground service and ExoPlayer keep running uninterrupted.
+
+            singleTask: every relaunch (launcher icon, Pairing forward, OTA relaunch)
+            must REUSE the existing instance instead of stacking a new one in the task.
+            Three stacked instances were observed on a HiSilicon panel (2026-08-14);
+            a buried instance's stale poller kicked engine.startLoop() every 5s, so the
+            screen replayed the first seconds of playlist item 0 forever. Relaunching
+            also clears anything stacked above (e.g. a forgotten Settings screen).
         -->
         <activity
             android:name="com.alive.player.ui.PlaybackActivity"
             android:exported="false"
+            android:launchMode="singleTask"
             android:resizeableActivity="false"
             android:theme="@style/Theme.Alive.Playback"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize" />

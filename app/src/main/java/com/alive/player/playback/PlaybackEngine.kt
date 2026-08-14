@@ -50,10 +50,33 @@ class PlaybackEngine(private val context: Context) {
     private var advanceRunnable: Runnable? = null
     private var retryRunnable: Runnable? = null
 
-    private var exoPlayer: ExoPlayer? = null
-    private var playerView: PlayerView? = null
+    // Double-buffered video: two PlayerViews and up to two ExoPlayers. The *active*
+    // pair (exoPlayer on playerView) shows the current item; while a video plays, the
+    // NEXT video is prepared on the other view (nextPlayer on the inactive view) so the
+    // swap at the boundary is instant instead of leaving the finished clip's last frame
+    // frozen for the ~0.5-1s a fresh prepare()+first-frame takes on these boxes. If the
+    // preload is unavailable (never scheduled, not ready, or the panel can't run two
+    // decoders at once) the code falls back to the original build-fresh-on-advance path,
+    // so behaviour is never worse than before — only the freeze is removed when possible.
+    private var exoPlayer: ExoPlayer? = null       // active player
+    private var playerView: PlayerView? = null     // active view (pvA or pvB)
+    private var pvA: PlayerView? = null
+    private var pvB: PlayerView? = null
     private var imageView: ImageView? = null
     private var webView: WebView? = null
+
+    // Preloaded next video (prepared, paused, first frame decoded on the inactive view).
+    private var nextPlayer: ExoPlayer? = null
+    private var nextPlayerView: PlayerView? = null
+    private var preloadedItem: PlanItem? = null
+    private var preloadReady = false
+    private var preloadListener: Player.Listener? = null
+    private var preloadRunnable: Runnable? = null
+
+    // Last plan handed to advance(), so preload can peek the upcoming item without a
+    // fresh disk read. Only an optimization: if it's stale the swap guard fails and we
+    // build fresh, which is correct, just not gapless.
+    private var lastPlan: com.alive.player.schedule.Plan? = null
 
     private var pendingItem: PlanItem? = null
 
@@ -72,6 +95,18 @@ class PlaybackEngine(private val context: Context) {
 
     /** Called when the engine begins rendering content. */
     var onPlaying: (() -> Unit)? = null
+
+    /**
+     * True while the engine is idle waiting for content (no plan, or no items for the
+     * current slot); false while it is rendering. This is the state pollers must consult
+     * before kicking startLoop(): onWaiting/onPlaying are single vars on this shared
+     * engine, so only the newest-bound activity's views track reality — an older,
+     * backgrounded activity judging by its own frozen waiting overlay called startLoop()
+     * every 5s forever, pinning the whole fleet's screens to the start of item 0.
+     * Main-thread only, like the rest of the engine's mutable state.
+     */
+    var isWaitingForContent = false
+        private set
 
     // Some vendor hardware AVC decoders on budget Android TV boxes are unreliable with
     // modern Media3 regardless of source encoding:
@@ -98,15 +133,26 @@ class PlaybackEngine(private val context: Context) {
         infos.filterNot { it.name in DecoderCapabilities.BROKEN_HARDWARE_DECODER_NAMES }
     }
 
-    fun attachViews(playerView: PlayerView, imageView: ImageView, webView: WebView) {
-        this.playerView = playerView
+    fun attachViews(playerViewA: PlayerView, playerViewB: PlayerView, imageView: ImageView, webView: WebView) {
+        this.pvA = playerViewA
+        this.pvB = playerViewB
+        this.playerView = playerViewA
         this.imageView = imageView
         this.webView = webView
 
         if (exoPlayer == null) {
-            exoPlayer = ExoPlayer.Builder(context, DefaultRenderersFactory(context).setMediaCodecSelector(safeMediaCodecSelector)).build()
+            exoPlayer = buildPlayer()
         }
-        playerView.player = exoPlayer
+        playerViewA.player = exoPlayer
+        // Both surfaces stay VISIBLE and fully opaque forever (the TextureView-never-hidden
+        // rule). Which one the viewer sees is decided by z-order alone — transitionViews
+        // brings the active surface to the front; the other keeps decoding underneath,
+        // covered. Alpha is left at 1 so a preloaded clip's first frame reliably renders
+        // into the covered surface (an alpha-0 TextureView's render behaviour is exactly
+        // the kind of thing that's silently broken on these panels — don't rely on it).
+        playerViewA.alpha = 1f
+        playerViewB.alpha = 1f
+        playerViewB.player = null
 
         pendingItem?.let {
             pendingItem = null
@@ -115,10 +161,51 @@ class PlaybackEngine(private val context: Context) {
     }
 
     fun detachViews() {
-        playerView?.player = null
+        pvA?.player = null
+        pvB?.player = null
         playerView = null
+        pvA = null
+        pvB = null
         imageView = null
         webView = null
+    }
+
+    private fun buildPlayer(): ExoPlayer =
+        ExoPlayer.Builder(context, DefaultRenderersFactory(context).setMediaCodecSelector(safeMediaCodecSelector)).build()
+
+    /** The player view that is NOT currently active — the preload/next-video target.
+     *  When double-buffering is disabled (e.g. single-decoder panels), this returns the
+     *  ACTIVE view so renderItem builds on it in place — the original single-surface
+     *  behaviour, with no second decoder and no preload path ever engaged. */
+    private fun inactivePlayerView(): PlayerView? {
+        if (!com.alive.player.BuildConfig.DOUBLE_BUFFER_VIDEO) return playerView
+        val a = pvA ?: return null
+        val b = pvB ?: return a
+        return if (playerView === a) b else a
+    }
+
+    private fun mediaItemFor(item: PlanItem, uri: android.net.Uri): MediaItem {
+        val mimeType = when (item.ext?.lowercase()) {
+            "mp4"  -> MimeTypes.VIDEO_MP4
+            "webm" -> MimeTypes.VIDEO_WEBM
+            "mkv"  -> MimeTypes.VIDEO_MATROSKA
+            "mov"  -> "video/quicktime"
+            else   -> null
+        }
+        return if (mimeType != null) {
+            MediaItem.Builder().setUri(uri).setMimeType(mimeType).build()
+        } else {
+            MediaItem.fromUri(uri)
+        }
+    }
+
+    private fun resolvedUriFor(item: PlanItem): android.net.Uri {
+        val localFile = item.sha256?.let { sha256 ->
+            item.ext?.let { ext ->
+                AssetDownloader.getCachedFile(context, item.contentVersionId, "current", sha256, ext)
+            }
+        }
+        return if (localFile != null) android.net.Uri.fromFile(localFile) else android.net.Uri.parse(item.uri)
     }
 
     fun startLoop() {
@@ -129,13 +216,20 @@ class PlaybackEngine(private val context: Context) {
             val fetchStatus = DevicePrefs(context).getFetchStatus()
             mainHandler.post {
                 if (plan == null || (plan.windows.isEmpty() && plan.fallbackItems.isEmpty())) {
+                    isWaitingForContent = true
                     val statusLine = buildStatusLine(fetchStatus)
                     onWaiting?.invoke(statusLine)
                     startRetryCountdown()
                     return@post
                 }
+                isWaitingForContent = false
                 onPlaying?.invoke()
-                currentItemIndex = 0
+                // Deliberately NO index reset: startLoop is called for plan changes,
+                // download-complete kicks and retry ticks, and resetting snapped playback
+                // back to item 0 every time (with a stale caller, every 5 seconds — the
+                // fleet-wide "first 5s of item 0 on repeat" outage). advance() takes the
+                // index modulo the item list, so a leftover index is valid against any
+                // plan and playback resumes from where the loop actually was.
                 advance(plan)
             }
         }
@@ -180,6 +274,7 @@ class PlaybackEngine(private val context: Context) {
 
     private fun advance(plan: com.alive.player.schedule.Plan) {
         currentTransition = plan.transition
+        lastPlan = plan
         val now = System.currentTimeMillis()
         val activeWindow = plan.windows.firstOrNull { it.startEpochMs <= now && now < it.endEpochMs }
 
@@ -190,11 +285,13 @@ class PlaybackEngine(private val context: Context) {
         }
 
         if (itemList.isEmpty()) {
+            isWaitingForContent = true
             onWaiting?.invoke("No content for current time slot")
             startRetryCountdown()
             return
         }
 
+        isWaitingForContent = false
         val item = itemList[currentItemIndex % itemList.size]
         currentItemIndex = (currentItemIndex + 1) % itemList.size
 
@@ -202,112 +299,221 @@ class PlaybackEngine(private val context: Context) {
     }
 
     private fun renderItem(item: PlanItem) {
-        val pv = playerView
         val iv = imageView
         val wv = webView
+        val activeView = playerView
 
         playItem(item)
 
-        if (pv == null || iv == null || wv == null) {
+        if (activeView == null || iv == null || wv == null || pvA == null || pvB == null) {
             pendingItem = item
             scheduleAdvanceTimer(item)
             return
         }
 
-        val localFile = item.sha256?.let { sha256 ->
-            item.ext?.let { ext ->
-                AssetDownloader.getCachedFile(context, item.contentVersionId, "current", sha256, ext)
-            }
+        val resolvedUri = resolvedUriFor(item)
+        // Whatever the viewer currently sees — hidden once the new item is on screen.
+        val previouslyVisible: View? = when {
+            iv.visibility == android.view.View.VISIBLE -> iv
+            wv.visibility == android.view.View.VISIBLE -> wv
+            else -> activeView
         }
-        val resolvedUri = if (localFile != null) android.net.Uri.fromFile(localFile) else android.net.Uri.parse(item.uri)
-
-        val newView: View = when (item.type) {
-            "video" -> pv
-            "image" -> iv
-            "web"   -> wv
-            else    -> return
-        }
-        val oldView = listOf(pv, iv, wv).firstOrNull { it !== newView && it.visibility == android.view.View.VISIBLE }
-
-        // Tear down any in-flight video unconditionally, not just when the NEXT item is
-        // also a video. Leaving it alive when advancing to an image/web item meant it kept
-        // decoding/playing in the background with videoEndListener still attached; whenever
-        // it later hit STATE_ENDED or an error on its own schedule, that stale listener fired
-        // unconditionally -- cancelling the CURRENT item's advance timer and forcing an
-        // immediate reloadAndAdvance() regardless of how much of its own duration had
-        // elapsed. That's what was cutting photos short well before their configured
-        // duration: a stale video from earlier in the loop finishing in the background.
-        cancelStallWatchdog()
-        exoPlayer?.let { old ->
-            old.removeListener(videoEndListener)
-            old.release()
-        }
-        exoPlayer = null
 
         when (item.type) {
             "video" -> {
                 cancelAdvanceTimer()
-                // Rebuilt fresh per item rather than reusing one ExoPlayer instance for the
-                // whole app lifetime: on this Foxsky/Hisilicon device, if the codec pipeline
-                // gets into a bad state once (output buffers never drained, decoder stuck
-                // flushing/restarting), the SAME instance never recovers for any later item
-                // either. A fresh instance gets a fresh MediaCodec/Surface handshake each time.
-                val player = ExoPlayer.Builder(context, DefaultRenderersFactory(context).setMediaCodecSelector(safeMediaCodecSelector)).build()
+                cancelPreloadRunnable()
+
+                // Fast path: this exact clip was preloaded on the inactive surface and its
+                // first frame is already decoded — promote it. The boundary is gapless.
+                if (preloadReady && preloadedItem === item && nextPlayer != null && nextPlayerView != null) {
+                    swapInPreloaded(item, previouslyVisible)
+                    return
+                }
+
+                // Fresh path (no usable preload): build a fresh player on the INACTIVE
+                // surface. The outgoing clip's last frame keeps showing on the still-active
+                // surface (keep_content_on_player_reset) until the new clip's first frame
+                // renders, then transitionViews swaps them — never worse than the old
+                // single-surface path, which is what this falls back to. A fresh instance
+                // per item is deliberate: on Hisilicon/Realtek a wedged codec pipeline never
+                // recovers on the same instance, so each item gets a fresh MediaCodec.
+                releasePreload()
+                cancelStallWatchdog()
+                val target = inactivePlayerView() ?: activeView
+                val outgoing = exoPlayer
+                outgoing?.removeListener(videoEndListener)
+                val player = buildPlayer()
                 exoPlayer = player
-                playerView?.player = player
+                playerView = target
+                target.player = player
                 player.addListener(videoEndListener)
-                val mimeType = when (item.ext?.lowercase()) {
-                    "mp4"  -> MimeTypes.VIDEO_MP4
-                    "webm" -> MimeTypes.VIDEO_WEBM
-                    "mkv"  -> MimeTypes.VIDEO_MATROSKA
-                    "mov"  -> "video/quicktime"
-                    else   -> null
-                }
-                val mediaItem = if (mimeType != null) {
-                    MediaItem.Builder().setUri(resolvedUri).setMimeType(mimeType).build()
-                } else {
-                    MediaItem.fromUri(resolvedUri)
-                }
-                pendingOldView = oldView
-                player.setMediaItem(mediaItem)
+                pendingOldView = previouslyVisible
+                player.setMediaItem(mediaItemFor(item, resolvedUri))
                 player.prepare()
                 player.playWhenReady = true
                 startStallWatchdog(item)
-                scheduleAdvanceTimer(item)
+                // Release the outgoing player after the swap is wired up; its last frame is
+                // held by keep_content_on_player_reset until the new first frame covers it.
+                outgoing?.let { old -> mainHandler.post { old.release() } }
+                // Slot timer + next-clip preload are armed in onRenderedFirstFrame.
             }
-            "image" -> {
-                showImage(iv, resolvedUri, item)
-                transitionViews(oldView, newView)
-            }
-            "web" -> {
-                wv.settings.javaScriptEnabled = false
-                wv.loadUrl(item.uri)
-                scheduleAdvanceTimer(item)
-                transitionViews(oldView, newView)
+            "image", "web" -> {
+                // Advancing to a non-video: fully tear the video pipeline down so a stale
+                // clip can't fire STATE_ENDED in the background and cut this item short.
+                cancelPreloadRunnable()
+                releasePreload()
+                cancelStallWatchdog()
+                exoPlayer?.let { old ->
+                    old.removeListener(videoEndListener)
+                    mainHandler.post { old.release() }
+                }
+                exoPlayer = null
+                if (item.type == "image") {
+                    showImage(iv, resolvedUri, item)
+                    transitionViews(previouslyVisible, iv)
+                } else {
+                    wv.settings.javaScriptEnabled = false
+                    wv.loadUrl(item.uri)
+                    scheduleAdvanceTimer(item)
+                    transitionViews(previouslyVisible, wv)
+                }
             }
         }
     }
 
+    /** Promote the already-prepared, first-frame-ready preloaded clip to active. */
+    private fun swapInPreloaded(item: PlanItem, previouslyVisible: View?) {
+        val player = nextPlayer ?: return
+        val view = nextPlayerView ?: return
+        preloadListener?.let { player.removeListener(it) }
+        preloadListener = null
+        nextPlayer = null
+        nextPlayerView = null
+        preloadedItem = null
+        preloadReady = false
+
+        val outgoing = exoPlayer
+        outgoing?.removeListener(videoEndListener)
+
+        exoPlayer = player
+        playerView = view
+        player.addListener(videoEndListener)
+        player.playWhenReady = true   // was paused during preload; run it from frame 0
+
+        cancelStallWatchdog()
+        startStallWatchdog(item)
+
+        // The incoming first frame is already on `view`; reveal it now and hide the old.
+        transitionViews(previouslyVisible, view)
+        outgoing?.let { old -> mainHandler.post { old.release() } }
+
+        // First frame already up, so arm the slot timer immediately (no first-frame wait),
+        // and line up the clip after this one.
+        scheduleAdvanceTimer(item, item.durationMs + VIDEO_END_GRACE_MS)
+        schedulePreloadForNext()
+    }
+
+    // ── Preload of the next clip ─────────────────────────────────────────────────
+    // While a video plays, its successor (if also a video) is prepared on the inactive
+    // surface a little before the current slot ends, so the swap at the boundary shows a
+    // live first frame instead of the finished clip frozen for a fresh prepare()'s worth
+    // of time. Preloading needs two decoders briefly; if the panel can't (init error on
+    // the second codec) the preload listener discards it and advance() builds fresh.
+
+    private fun schedulePreloadForNext() {
+        cancelPreloadRunnable()
+        if (!com.alive.player.BuildConfig.DOUBLE_BUFFER_VIDEO) return   // inert on single-decoder panels
+        val current = currentItem ?: return
+        val next = peekNextItem() ?: return
+        if (next.type != "video") return   // images/web decode fast; no preload needed
+        if (inactivePlayerView() == null) return
+        // Fire PRELOAD_LEAD_MS before the current slot's timer, clamped so short slots
+        // still preload (just with more decoder overlap).
+        val lead = (current.durationMs + VIDEO_END_GRACE_MS - PRELOAD_LEAD_MS).coerceAtLeast(0L)
+        val r = Runnable { preloadNext(next) }
+        preloadRunnable = r
+        mainHandler.postDelayed(r, lead)
+    }
+
+    /** The item advance() will select next — same math, without mutating the index. */
+    private fun peekNextItem(): PlanItem? {
+        val plan = lastPlan ?: return null
+        val now = System.currentTimeMillis()
+        val win = plan.windows.firstOrNull { it.startEpochMs <= now && now < it.endEpochMs }
+        val list = if (win != null && win.items.isNotEmpty()) win.items else plan.fallbackItems
+        if (list.isEmpty()) return null
+        return list[currentItemIndex % list.size]   // currentItemIndex already points at next
+    }
+
+    private fun preloadNext(item: PlanItem) {
+        val target = inactivePlayerView() ?: return
+        if (preloadedItem === item && nextPlayer != null) return
+        releasePreload()
+        val player = buildPlayer()
+        val listener = object : Player.Listener {
+            override fun onRenderedFirstFrame() { preloadReady = true }
+            override fun onPlayerError(error: PlaybackException) {
+                android.util.Log.w("PlaybackEngine", "preload failed (${error.errorCode}); will build fresh at boundary: ${error.message}")
+                releasePreload()
+            }
+        }
+        target.player = player
+        player.addListener(listener)
+        preloadListener = listener
+        player.setMediaItem(mediaItemFor(item, resolvedUriFor(item)))
+        player.prepare()
+        player.playWhenReady = false   // decode the first frame, but don't run the clip
+        nextPlayer = player
+        nextPlayerView = target
+        preloadedItem = item
+        preloadReady = false
+    }
+
+    private fun cancelPreloadRunnable() {
+        preloadRunnable?.let { mainHandler.removeCallbacks(it) }
+        preloadRunnable = null
+    }
+
+    /** Tear down a preloaded (or preloading) player and clear its state. */
+    private fun releasePreload() {
+        cancelPreloadRunnable()
+        val p = nextPlayer
+        val l = preloadListener
+        nextPlayer = null
+        nextPlayerView = null
+        preloadedItem = null
+        preloadReady = false
+        preloadListener = null
+        if (p != null) {
+            l?.let { p.removeListener(it) }
+            mainHandler.post { p.release() }
+        }
+    }
+
+    private fun isPlayerView(v: View?): Boolean = v != null && (v === pvA || v === pvB)
+
     /**
-     * Cross-fades or slides from the previously-visible renderer to the new one, per the
-     * playlist's transition setting. Same-view switches (e.g. video -> video) skip the
-     * transition entirely -- ExoPlayer just swaps the media item in place.
+     * Reveals [newView] as the active renderer and hides [oldView], per the playlist's
+     * transition setting.
+     *
+     * The active renderer is brought to the front rather than hiding the others, because
+     * a PlayerView must never actually go GONE/INVISIBLE: on this fleet's Hisilicon/Realtek
+     * TextureView implementation ExoPlayer silently never renders into a non-VISIBLE view
+     * (no error, onRenderedFirstFrame just never fires), which permanently breaks video.
+     * That's also exactly why preload works — a covered-but-VISIBLE player surface still
+     * decodes its first frame. So player views are only ever *covered*, never hidden;
+     * image/web (ordinary views) are GONE'd once covered so a player surface can show
+     * through when it's next active.
      */
     private fun transitionViews(oldView: View?, newView: View) {
+        newView.bringToFront()
         if (oldView === newView) {
             newView.visibility = android.view.View.VISIBLE
             newView.alpha = 1f
             newView.translationX = 0f
             return
         }
-        // playerView must never actually be hidden (GONE or INVISIBLE) once attached: on
-        // this device's TextureView implementation, ExoPlayer never renders a frame into
-        // a non-VISIBLE view -- confirmed on-device, no error, onRenderedFirstFrame just
-        // silently never fires -- which would permanently break every later video too.
-        // Leaving it VISIBLE underneath whatever draws on top (z-order: player_view is
-        // the bottom-most sibling) costs nothing -- a stale or absent frame is simply
-        // covered, not seen. Its alpha/translationX still reset normally next time it's
-        // used as newView.
         val durationMs = DevicePrefs(context).getTransitionDurationMs()
         when (currentTransition) {
             "FADE" -> {
@@ -316,8 +522,7 @@ class PlaybackEngine(private val context: Context) {
                 newView.visibility = android.view.View.VISIBLE
                 newView.animate().alpha(1f).setDuration(durationMs).start()
                 oldView?.animate()?.alpha(0f)?.setDuration(durationMs)?.withEndAction {
-                    if (oldView !== playerView) oldView.visibility = android.view.View.GONE
-                    oldView.alpha = 1f
+                    hideCoveredView(oldView)
                 }?.start()
             }
             "SLIDE" -> {
@@ -327,16 +532,28 @@ class PlaybackEngine(private val context: Context) {
                 newView.visibility = android.view.View.VISIBLE
                 newView.animate().translationX(0f).setDuration(durationMs).start()
                 oldView?.animate()?.translationX(-w)?.setDuration(durationMs)?.withEndAction {
-                    if (oldView !== playerView) oldView.visibility = android.view.View.GONE
+                    hideCoveredView(oldView)
                     oldView.translationX = 0f
                 }?.start()
             }
             else -> {
-                if (oldView !== playerView) oldView?.visibility = android.view.View.GONE
                 newView.alpha = 1f
                 newView.translationX = 0f
                 newView.visibility = android.view.View.VISIBLE
+                hideCoveredView(oldView)
             }
+        }
+    }
+
+    /** A player view is left VISIBLE (just covered, per the TextureView rule); image/web
+     *  are GONE'd so the player surface below can show through when next active. */
+    private fun hideCoveredView(v: View?) {
+        v ?: return
+        if (isPlayerView(v)) {
+            v.alpha = 1f
+        } else {
+            v.visibility = android.view.View.GONE
+            v.alpha = 1f
         }
     }
 
@@ -346,6 +563,17 @@ class PlaybackEngine(private val context: Context) {
             pendingOldView = null
             val new = playerView ?: return
             transitionViews(old, new)
+            // Arm the slot timer only now — a video's frames don't appear until the first
+            // one renders, ~0.5-1s after prepare() on these boxes. Timed from prepare() (as
+            // it used to be) the timer fired that much before the clip actually finished,
+            // skipping the last ~1s of every video whose slot length matched its own length.
+            // The + grace lets STATE_ENDED (natural end) win for full-length clips, so the
+            // whole video plays; the timer only caps a video deliberately trimmed to a
+            // shorter slot. Guarded on type because this listener is only attached for video.
+            currentItem?.let { if (it.type == "video") scheduleAdvanceTimer(it, it.durationMs + VIDEO_END_GRACE_MS) }
+            // Now that this clip is up, line up the next one on the inactive surface so the
+            // coming boundary is gapless (no-op unless the next item is a video).
+            schedulePreloadForNext()
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -437,6 +665,15 @@ class PlaybackEngine(private val context: Context) {
         const val STALL_TIMEOUT_MS = 10_000L
         // Safety margin for showImage()'s fallback timer when Glide never calls back.
         const val IMAGE_LOAD_GRACE_MS = 15_000L
+        // Slack added to a video's slot timer so the clip's own STATE_ENDED (natural end)
+        // wins for full-length videos — the timer then only enforces a deliberate trim.
+        const val VIDEO_END_GRACE_MS = 750L
+        // How long before a clip's slot ends to start preparing the next clip on the other
+        // surface. Long enough to cover prepare()+first-frame decode (~0.5-1s here) with
+        // margin; short enough to minimise the window where two video decoders run at once
+        // (a real limit on budget SoCs — if the 2nd decoder fails to init the preload is
+        // discarded and the boundary just builds fresh, i.e. the old behaviour).
+        const val PRELOAD_LEAD_MS = 1_500L
         // How far a creative's aspect ratio may differ from the panel's before we stop
         // filling and letterbox it instead — i.e. how much of a creative we're willing to
         // crop away in exchange for edge-to-edge coverage. 1.35 ≈ "lose at most a quarter
@@ -448,6 +685,16 @@ class PlaybackEngine(private val context: Context) {
     }
 
     private fun reloadAndAdvance() {
+        // Gapless fast path: the next clip is already preloaded with its first frame
+        // decoded — advance from the in-memory plan so the swap happens with no disk read
+        // between the outgoing last frame and the incoming first. peekNextItem() used this
+        // same plan+index to choose what to preload, so advance() selects that same item
+        // and hits swapInPreloaded(). If anything has drifted, the swap guard fails and it
+        // builds fresh — correct, just not gapless.
+        if (preloadReady && preloadedItem != null && lastPlan != null) {
+            advance(lastPlan!!)
+            return
+        }
         CoroutineScope(Dispatchers.IO).launch {
             val plan = PlanLoader.load(context)
             mainHandler.post {
@@ -557,6 +804,10 @@ class PlaybackEngine(private val context: Context) {
         val iv = imageView ?: return
         val wv = webView ?: return
 
+        // A restart replays the CURRENT clip on the active surface, so any preload staged
+        // for the *next* clip is now stale — drop it (and its two-decoder pressure).
+        releasePreload()
+
         val localFile = item.sha256?.let { sha256 ->
             item.ext?.let { ext ->
                 AssetDownloader.getCachedFile(context, item.contentVersionId, "current", sha256, ext)
@@ -589,7 +840,8 @@ class PlaybackEngine(private val context: Context) {
                 player.prepare()
                 player.playWhenReady = true
                 startStallWatchdog(item)
-                scheduleAdvanceTimer(item)
+                // Slot timer armed in onRenderedFirstFrame, not here — see the note in
+                // renderItem()'s video branch and videoEndListener.onRenderedFirstFrame.
             }
             "image" -> {
                 // playerView is never hidden -- see transitionViews()'s doc comment.
@@ -610,6 +862,9 @@ class PlaybackEngine(private val context: Context) {
     }
 
     fun stop() {
+        // Not "waiting" — stopped. Leaving this true would let an activity poller
+        // resurrect the loop on an engine whose service is shutting down.
+        isWaitingForContent = false
         cancelAdvanceTimer()
         retryRunnable?.let { mainHandler.removeCallbacks(it) }
         retryRunnable = null
@@ -618,6 +873,8 @@ class PlaybackEngine(private val context: Context) {
         val now = NtpSyncManager.now(context)
         currentItem?.let { emitCompleteEvent(it, now) }
         currentItem = null
+        cancelStallWatchdog()
+        releasePreload()   // tear down any preloaded next-clip player + its scheduled runnable
         // Capture and null-out before posting to avoid double-release if stop() is called twice
         val playerToRelease = exoPlayer
         exoPlayer = null
