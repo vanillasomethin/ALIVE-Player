@@ -127,4 +127,8 @@ dependencies {
 
     implementation(platform("com.google.firebase:firebase-bom:34.13.0"))
     implementation("com.google.firebase:firebase-messaging")
+
+    testImplementation("junit:junit:4.13.2")
+    // Real org.json for local unit tests — the android.jar stub throws on every call.
+    testImplementation("org.json:json:20240303")
 }

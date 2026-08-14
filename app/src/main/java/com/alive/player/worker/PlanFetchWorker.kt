@@ -115,6 +115,14 @@ class PlanFetchWorker(
             }
 
             when {
+                // A 304 means "unchanged since last fetch" — including an unchanged
+                // *empty* plan (screen never assigned a schedule). Without this check
+                // the card would say "Schedule up to date" on every poll for as long
+                // as the plan stays empty, instead of pointing at the admin panel.
+                result.notModified && existing != null && planJsonHasNoItems(existing.planJson) ->
+                    prefs.setFetchStatus(FetchStatus.NO_SCHEDULE.also {
+                        it.message = "No schedule assigned — go to wearealive.in/admin"
+                    })
                 result.notModified ->
                     prefs.setFetchStatus(FetchStatus.OK.also {
                         it.message = "Schedule up to date (${existing?.let { c ->
@@ -231,3 +239,14 @@ class PlanFetchWorker(
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 }
+
+/**
+ * Applies the fresh-fetch `result.items.isEmpty()` check to a cached plan body, so the
+ * status a plan produced on a 200 is the same one its 304s keep reporting. A missing
+ * `items` key counts as empty for the same reason (`optJSONArray(...) ?: JSONArray()`
+ * on the fetch path). Malformed JSON reports false: a corrupt cache is not "nothing
+ * assigned in the admin" and must not surface that guidance.
+ */
+internal fun planJsonHasNoItems(planJson: String): Boolean =
+    runCatching { (org.json.JSONObject(planJson).optJSONArray("items")?.length() ?: 0) == 0 }
+        .getOrDefault(false)
