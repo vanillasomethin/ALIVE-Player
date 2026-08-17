@@ -1,34 +1,86 @@
-# Signage UX Uplift — Implementation Checklist
+# OTA update prompt-loop fix (2026-08-10)
 
-- [x] 1. QR Code on Pairing Screen (ZXing + two QRs: admin URL + raw key)
-- [x] 2. Restructured Waiting Screen — State Cards (icon/headline/detail per FetchStatus)
-- [x] 3. Download Progress on Waiting Screen (doneCount/totalCount DAO queries + progress bar)
-- [x] 4. Offline Playback Badge (NetworkCallback, offline_badge TextView)
-- [x] 5. Network Indicator on Waiting Screen (network_dot + network_label)
-- [x] 6. Diagnostic Overlay (long-press → PIN → overlay with device info)
-- [x] 7. Enhanced Settings Screen (relative timestamps, network, storage, pending, clear cache)
-- [x] 8. Settings Access from Playback Screen (5-tap on waiting overlay)
+## Bug
+`UpdateCheckWorker` (6h periodic) downloads a newer APK and commits a PackageInstaller
+session unconditionally. On non-device-owner boxes (most of the sideloaded fleet) the
+commit ends in `STATUS_PENDING_USER_ACTION` and `UpdateInstallReceiver` launches the
+system install-confirm dialog over kiosk playback with `FLAG_ACTIVITY_NEW_TASK`.
+Nobody at the TV confirms → version stays old → every 6h cycle re-prompts, stealing
+focus from playback each time. And there is no `MY_PACKAGE_REPLACED` receiver, so when
+an install *is* confirmed, the app dies and never comes back → black screen, no ads.
+
+## Design
+Never commit an install session that cannot complete:
+- **Silent-capable** (device owner on S+, or self-installer-of-record on S+ with
+  `UPDATE_PACKAGES_WITHOUT_USER_ACTION`) → commit immediately, install applies itself.
+- **Needs user action** → do NOT commit from the worker. Just download + record
+  "update ready" state. The Settings screen (operator present, reached via MENU key)
+  shows an "Install update" button that performs the commit; the confirm dialog then
+  appears in front of a human, never over playback.
+- `UpdateGate.userActionAllowed` is true only while SettingsActivity is resumed —
+  `UpdateInstallReceiver` uses it as belt-and-braces: a PENDING that leaks through
+  while playback owns the screen is swallowed and recorded, not launched.
+- New `PackageReplacedReceiver` (`MY_PACKAGE_REPLACED`) relaunches playback +
+  reschedules workers after any successful update, so the screen comes back by itself.
+- After the first operator-confirmed self-update the player becomes its own
+  installer-of-record, so on Android 12+ every later update is fully silent.
+
+## Todo
+- [x] Read update flow, manifest, prefs, settings UI, boot receiver
+- [ ] DevicePrefs: update-ready state (versionCode/name/apkPath + needs-user-action flag)
+- [ ] UpdateGate (settings-visible flag)
+- [ ] UpdateInstaller: shared session commit, silent-eligibility, stale-session abandon, old-APK prune
+- [ ] UpdateCheckWorker: dedupe via state; commit only when completable
+- [ ] UpdateInstallReceiver: gate dialog launch; record state; clear on success
+- [ ] PackageReplacedReceiver + manifest entry; UPDATE_PACKAGES_WITHOUT_USER_ACTION permission
+- [ ] UpdateScheduler.checkNow() one-shot
+- [ ] SettingsActivity: toggle UpdateGate; SettingsFragment/layout: update row + install button
+- [x] Clean build (JDK 17, CI parity)
+- [x] Adversarial multi-lens review of the diff
+- [ ] Re-build + re-verify after applying review fixes
 
 ## Review
-All 8 features implemented across:
-- `app/build.gradle.kts` — ZXing dependency
-- `AndroidManifest.xml` — ACCESS_NETWORK_STATE permission
-- `activity_pairing.xml` — QR row (admin URL + raw key)
-- `PairingActivity.kt` — QR bitmap generation
-- `data/DownloadJobDao.kt` — doneCount() + totalCount()
-- `activity_playback.xml` — status card, network dot, offline badge, diag overlay
-- `PlaybackActivity.kt` — NetworkCallback, updateStatusCard, diag overlay, 5-tap
-- `activity_settings.xml` — network, storage, pending uploads rows + clear cache button
-- `settings/SettingsFragment.kt` — relative timestamps, new rows, clear cache action
+First implementation passed a clean build; the 4-lens adversarial review (19 agents:
+state-machine / Android-platform / kiosk-regression / requirements, each finding
+independently refutation-tested) confirmed 12 findings (9 distinct). All fixed:
+1. (major ×2 lenses) Own abandonSession() fires STATUS_FAILURE_ABORTED into our
+   receiver, misread as operator-cancel → poisons needs-user-action on silent devices.
+   Fixed: session-id recorded before commit; receiver ignores other sessions' statuses.
+2. (critical) Silent install on non-owner installer-of-record boxes (API 29+) killed
+   the app with no legal way to relaunch → dead screen. Fixed: auto-commit now also
+   requires canRelaunchUiAfterInstall (owner / pre-Q / overlay grant); everyone else
+   goes through the operator path.
+3. (critical) On device-owner boxes both the OS HOME-resume and PackageReplacedReceiver
+   relaunched → stacked PlaybackActivities/black screen. Fixed: BootReceiver-style
+   current-HOME guard.
+4. (minor ×2) checkNow one-shot could run concurrently with the periodic worker →
+   same .part staging file corrupted. Fixed: worker-wide Mutex + KEEP policy.
+5. (minor) commit() unserialized across 3 call paths; double-press abandoned the
+   session behind a visible dialog. Fixed: @Synchronized + 10-min in-flight guard +
+   button disabled until rebind.
+6. (minor) Unvalidated (captive-portal) network consumed runs as success → Settings
+   install silently no-oped forever. Fixed: Result.retry().
+7. (minor) Settings could install a server-withdrawn build from stale state. Fixed:
+   Install button always revalidates via checkNow (cached APK reused when current).
+8. (minor) Deleted APKs left assetDao rows → phantom bytes shrank the 2GB LRU media
+   budget. Fixed: prune/clear paths also delete rows.
+9. (minor, declined) Live progress/status observer on the Settings update row —
+   deliberate skip: observeForever on deprecated platform Fragment is fragilty for
+   polish; onResume rebind covers state refresh. Revisit if operators report confusion.
 
 ---
 
-# Autostart Hardening + Silent OTA — Implementation Checklist
+# Stacked-PlaybackActivity poller outage fix (2026-08-14)
 
-Goal: close the two real gaps found in the competitive audit — (1) no OEM-proof
-autostart, (2) no working OTA on the sideload-distributed fleet. Decision from
-user: full Device Owner provisioning (existing fleet will be re-enrolled),
-implement both fixes in one pass since they share the same Device Owner base.
+## Bug
+Reproduced live on the Foxsky/KTC HiSilicon TV: three PlaybackActivity instances
+stacked in one task (no launchMode; every launcher/monkey relaunch adds one).
+Each instance keeps running downloadPollRunnable while backgrounded (callbacks only
+removed in onDestroy). The poller kicked `engine.startLoop()` whenever ITS OWN
+waitingOverlay was VISIBLE — but onWaiting/onPlaying are single vars on the shared
+service engine, so a buried instance's overlay stays frozen VISIBLE and it kicks
+startLoop() every 5s forever. startLoop() reset currentItemIndex=0 → screen replays
+the first 5s of item 0 indefinitely (ExoPlayer Init/Release every 5.000s, no errors).
 
 ## A. Device Owner foundation
 - [x] 1. `AliveDeviceAdminReceiver.kt` — DeviceAdminReceiver subclass
@@ -156,3 +208,26 @@ time — Android cmdline-tools + SDK 35 were installed in the session scratchpad
 `:app:compileDebugKotlin` and `:app:testDebugUnitTest` ran for real (closing that
 session's compile-verification gap as well). Studio: `tsc --noEmit` + `next build`;
 Prisma migration DDL cross-checked against `prisma migrate diff`.
+
+---
+
+## Todo
+- [x] Manifest: `android:launchMode="singleTask"` on PlaybackActivity (+ onNewIntent
+      re-asserts kiosk guards on instance reuse)
+- [x] PlaybackActivity: pollers start in onStart / removed in onStop (not onDestroy),
+      so a STOPPED instance can never poll
+- [x] PlaybackActivity: download poller kicks on `engine.isWaitingForContent`
+      (shared engine truth), never the activity's own overlay view
+- [x] PlaybackEngine: new `isWaitingForContent` state (set on waiting/no-content paths,
+      cleared on render/stop)
+- [x] PlaybackEngine: startLoop() no longer resets currentItemIndex — resumes from the
+      current index (modulo list size), so a legitimate kick doesn't snap to item 0
+- [x] Clean build (generic + kodak flavors)
+- [x] Device test on the HiSilicon bench panel (192.168.15.156, APK 999320-debug):
+      3 consecutive relaunches all delivered to the SAME ActivityRecord (4c0ad9f) —
+      no stacking; 90s logcat cadence cycles 5.4s→11.3s→5.8s→5.5s repeatedly (all 4
+      playlist items, incl. the 11s one) — no 5.000s item-0 reset signature. One
+      transient "Video error 2001: Source error" recovered as designed (evict+advance).
+      Mid-test the app vanished: logcat shows two external force-stops (someone using
+      the TV's selenview settings at the bench) — not a crash; relaunched, cadence
+      healthy again. NOT committed — tree also holds unrelated update-gate WIP.

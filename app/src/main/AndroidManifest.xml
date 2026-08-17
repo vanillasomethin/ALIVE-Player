@@ -10,6 +10,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Lets a self-update commit with USER_ACTION_NOT_REQUIRED once this app is its
+         own installer-of-record (first successful self-update onward, Android 12+).
+         Normal permission — granted at install, no runtime prompt. -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
@@ -57,10 +61,18 @@
         <!--
             configChanges declared so requestedOrientation rotates without recreating the
             Activity — the foreground service and ExoPlayer keep running uninterrupted.
+
+            singleTask: every relaunch (launcher icon, Pairing forward, OTA relaunch)
+            must REUSE the existing instance instead of stacking a new one in the task.
+            Three stacked instances were observed on a HiSilicon panel (2026-08-14);
+            a buried instance's stale poller kicked engine.startLoop() every 5s, so the
+            screen replayed the first seconds of playlist item 0 forever. Relaunching
+            also clears anything stacked above (e.g. a forgotten Settings screen).
         -->
         <activity
             android:name="com.alive.player.ui.PlaybackActivity"
             android:exported="false"
+            android:launchMode="singleTask"
             android:resizeableActivity="false"
             android:theme="@style/Theme.Alive.Playback"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize" />
@@ -107,6 +119,17 @@
         <receiver
             android:name="com.alive.player.worker.UpdateInstallReceiver"
             android:exported="false" />
+
+        <!-- Relaunches playback right after an OTA self-update replaces the package —
+             without it a successful install leaves a dead screen until reboot.
+             MY_PACKAGE_REPLACED is a protected broadcast only the system can send. -->
+        <receiver
+            android:name="com.alive.player.receiver.PackageReplacedReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Device Owner: lets the player silently claim HOME and silently install
              OTA updates (PackageInstaller, no confirm dialog, API 31+). Enrolled via

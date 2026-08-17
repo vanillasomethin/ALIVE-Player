@@ -64,6 +64,7 @@ class PlaybackActivity : Activity() {
     private var bound = false
 
     private lateinit var playerView: PlayerView
+    private lateinit var playerViewB: PlayerView
     private lateinit var imageView: ImageView
     private lateinit var webView: WebView
     private lateinit var contentRotator: FrameLayout
@@ -188,7 +189,13 @@ class PlaybackActivity : Activity() {
                         lastPollBytesMs = 0L
                         lastPollBytes   = 0L
                         downloadCorner.visibility = View.GONE
-                        if (waitingOverlay.visibility == View.VISIBLE) {
+                        // Kick on the ENGINE's state, never this activity's overlay view:
+                        // onWaiting/onPlaying are single vars on the shared service engine,
+                        // so an activity that is no longer the newest-bound one has a
+                        // frozen overlay — judging by it, a buried instance called
+                        // startLoop() every 5s forever (fleet-wide item-0 replay,
+                        // 2026-08-14). The engine always knows whether it's really idle.
+                        if (engine?.isWaitingForContent == true) {
                             engine?.startLoop()
                         }
                     }
@@ -212,7 +219,7 @@ class PlaybackActivity : Activity() {
                 waitingOverlay.visibility = View.GONE
             }
 
-            eng.attachViews(playerView, imageView, webView)
+            eng.attachViews(playerView, playerViewB, imageView, webView)
             bound = true
         }
 
@@ -228,6 +235,7 @@ class PlaybackActivity : Activity() {
         setContentView(R.layout.activity_playback)
 
         playerView        = findViewById(R.id.player_view)
+        playerViewB       = findViewById(R.id.player_view_b)
         imageView         = findViewById(R.id.image_view)
         webView           = findViewById(R.id.web_view)
         contentRotator    = findViewById(R.id.content_rotator)
@@ -301,9 +309,7 @@ class PlaybackActivity : Activity() {
             ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
         setNetworkState(isOnline)
 
-        // ── Start polls ───────────────────────────────────────────────────
-        uiHandler.post(planPollRunnable)
-        uiHandler.post(downloadPollRunnable)
+        // Polls start in onStart, not here — see onStart/onStop.
 
         // Resume full kiosk whenever playback is (re)opened — this is what makes the
         // 5×-BACK exit "temporary": launching from the apps menu re-claims HOME and
@@ -316,9 +322,40 @@ class PlaybackActivity : Activity() {
         bindService(serviceIntent, connection, BIND_AUTO_CREATE)
     }
 
+    /**
+     * The pollers live between onStart and onStop, NOT onCreate→onDestroy: a
+     * backgrounded-but-alive instance (Settings on top, or a second instance stacked by
+     * a relaunch before launchMode="singleTask" existed) must not keep polling — its
+     * views no longer track the shared engine (see downloadPollRunnable), so its polls
+     * act on stale state. Three such instances, each kicking engine.startLoop() every
+     * 5s, were the fleet-wide "first 5s of item 0 on repeat" outage of 2026-08-14.
+     */
+    override fun onStart() {
+        super.onStart()
+        uiHandler.post(planPollRunnable)
+        uiHandler.post(downloadPollRunnable)
+    }
+
+    override fun onStop() {
+        // Only the pollers — a blanket removeCallbacksAndMessages would also kill
+        // unrelated one-shots (banner auto-hide, retry re-enable) mid-flight.
+        uiHandler.removeCallbacks(planPollRunnable)
+        uiHandler.removeCallbacks(downloadPollRunnable)
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
         enterLockTaskIfOwner()
+    }
+
+    // singleTask relaunch (launcher icon, Pairing forward, OTA relaunch) lands here on
+    // the existing instance instead of stacking a new one. Re-assert the kiosk guards
+    // exactly like a fresh onCreate would — reopening the app is the documented way to
+    // undo the 5×BACK kiosk exit, and that must keep working when the instance is reused.
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        resumeKioskGuards()
     }
 
     /**
