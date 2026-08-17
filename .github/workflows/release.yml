@@ -53,14 +53,20 @@ jobs:
             echo "see tools/branding/README.md."
           fi
 
+      # The fleet ships the generic flavor (isDefault; kodak exists only to flip
+      # per-panel flags like DOUBLE_BUFFER_VIDEO). Building just generic also keeps
+      # CI time flat — bare assembleDebug would build every flavor.
       - name: Build debug APK
         env:
           BUILD_NUMBER: ${{ github.run_number }}
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleGenericDebug --no-daemon
 
+      # Flavors moved the output under apk/generic/debug/; stage it back at the
+      # pre-flavor path so the manifest + release steps below stay unchanged.
       - name: Rename APK with version
         run: |
-          mv app/build/outputs/apk/debug/app-debug.apk \
+          mkdir -p app/build/outputs/apk/debug
+          mv app/build/outputs/apk/generic/debug/app-generic-debug.apk \
              app/build/outputs/apk/debug/alive-player-${{ github.run_number }}.apk
 
       # OTA manifest published alongside the APK, so /api/device/update-check reads the
@@ -146,14 +152,16 @@ jobs:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-        run: ./gradlew bundleRelease --no-daemon
+        run: ./gradlew bundleGenericRelease --no-daemon
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-release-aab
-          path: app/build/outputs/bundle/release/app-release.aab
+          path: app/build/outputs/bundle/genericRelease/app-generic-release.aab
           retention-days: 30
+          # Run 63 "succeeded" while uploading nothing (default is warn) — fail loud.
+          if-no-files-found: error
 
       # Play Store publishing intentionally removed — updates ship OTA. Re-enabling it
       # would also need the self-update code split out into a separate build flavour:
