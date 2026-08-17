@@ -56,10 +56,12 @@ class PopUploadWorker(
                 dao.markUploaded(pending.map { it.eventId })
                 dao.deleteUploaded()
             } catch (ex: ApiHttpException) {
-                // 410 = this screen was deleted in the admin panel. Decommission —
-                // the queued events belong to a device that no longer exists and the
-                // server would never accept them; re-claiming would resurrect it.
-                if (ex.code == 410) {
+                // Marker-carrying 410 = this screen was deleted in the admin panel.
+                // Decommission — the queued events belong to a device that no longer
+                // exists and the server would never accept them; re-claiming would
+                // resurrect it. A bare 410 is infra noise (see
+                // ApiHttpException.isDecommission) and is handled as transient below.
+                if (ex.isDecommission) {
                     DeviceDecommissioner.wipe(applicationContext, "event upload returned 410 — deleted in admin panel")
                     return@withContext Result.success()
                 }
@@ -76,10 +78,10 @@ class PopUploadWorker(
                     return@withContext Result.retry()
                 }
                 // Only a genuine payload rejection counts toward quarantine.
-                // Timeout (408), rate-limit (429) and all 5xx are transient — leave
-                // failCount untouched so no proof-of-play is ever silently dropped
-                // because of a bad network day.
-                if (ex.code in 400..499 && ex.code != 408 && ex.code != 429) {
+                // Timeout (408), rate-limit (429), bare infra 410s and all 5xx are
+                // transient — leave failCount untouched so no proof-of-play is ever
+                // silently dropped because of a bad network day.
+                if (ex.code in 400..499 && ex.code != 408 && ex.code != 429 && ex.code != 410) {
                     dao.incrementFailCount(pending.map { it.eventId })
                 }
                 return@withContext Result.retry()

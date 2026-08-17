@@ -81,8 +81,9 @@ class UpdateCheckWorker(
                 }
                 Result.success()
             } catch (ex: Exception) {
-                // 410 = deleted in the admin panel; same handling as every worker.
-                if (ex is ApiHttpException && ex.code == 410) {
+                // Marker-carrying 410 = deleted in the admin panel; same handling as
+                // every worker (bare infra 410s retry — ApiHttpException.isDecommission).
+                if (ex is ApiHttpException && ex.isDecommission) {
                     DeviceDecommissioner.wipe(applicationContext, "update check returned 410 — deleted in admin panel")
                     return@withLock Result.success()
                 }

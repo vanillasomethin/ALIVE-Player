@@ -70,11 +70,19 @@ object UpdateInstaller {
         val installer = context.packageManager.packageInstaller
 
         val sessions = installer.mySessions
-        val inFlightWindowMs = 10L * 60 * 1000
-        if (sessions.any {
-                it.isCommitted && System.currentTimeMillis() - it.createdMillis < inFlightWindowMs
-            }
-        ) return
+        // SessionInfo.isCommitted is API 29 and createdMillis API 30 — touching them
+        // on API 26-29 panels throws NoSuchMethodError (an Error, so no catch in
+        // the worker chain saves the install; commit dies on its first line forever).
+        // Below R skip the in-flight probe: those devices only reach commit via the
+        // operator path, and the persisted session id plus the abandon sweep below
+        // already keep stale sessions from piling up or being misread.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val inFlightWindowMs = 10L * 60 * 1000
+            if (sessions.any {
+                    it.isCommitted && System.currentTimeMillis() - it.createdMillis < inFlightWindowMs
+                }
+            ) return
+        }
 
         sessions.forEach { info ->
             runCatching { installer.abandonSession(info.sessionId) }
