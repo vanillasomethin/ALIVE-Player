@@ -219,6 +219,14 @@ class PlaybackActivity : Activity() {
                 waitingOverlay.visibility = View.GONE
             }
 
+            // The engine outlives this activity (it belongs to the foreground service) and
+            // may already be mid-loop when we bind — an install/relaunch rebinds after
+            // playback resumed, so onPlaying fired before these handlers existed and will
+            // not fire again until the next startLoop(). Sync the overlay to the engine's
+            // actual state or it stays up (layout default VISIBLE) over healthy playback.
+            waitingOverlay.visibility =
+                if (eng.isWaitingForContent) View.VISIBLE else View.GONE
+
             eng.attachViews(playerView, playerViewB, imageView, webView)
             bound = true
         }
