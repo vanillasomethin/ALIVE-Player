@@ -39,9 +39,11 @@ class HeartbeatWorker(
             try {
                 heartbeat(token)
             } catch (ex: ApiHttpException) {
-                // 410 = this screen was deleted in the admin panel — decommission
-                // rather than re-claim, which would resurrect it as a new device.
-                if (ex.code == 410) {
+                // Marker-carrying 410 = this screen was deleted in the admin panel —
+                // decommission rather than re-claim, which would resurrect it as a new
+                // device. A bare 410 (no marker) is infra noise, not a deletion — see
+                // ApiHttpException.isDecommission — and falls through to normal retry.
+                if (ex.isDecommission) {
                     DeviceDecommissioner.wipe(applicationContext, "heartbeat returned 410 — deleted in admin panel")
                     return Result.success()
                 }

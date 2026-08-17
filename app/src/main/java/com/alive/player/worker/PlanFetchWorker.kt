@@ -142,10 +142,11 @@ class PlanFetchWorker(
 
             Result.success()
         } catch (ex: Exception) {
-            // 410 Gone = this screen was deleted in the admin panel. Wipe and return
-            // to pairing; anything else (including 401, which reclaim already tried
-            // to fix) is a normal transient failure.
-            if (ex is ApiHttpException && ex.code == 410) {
+            // Marker-carrying 410 = this screen was deleted in the admin panel. Wipe
+            // and return to pairing; anything else — including 401 (reclaim already
+            // tried to fix it) and bare infra 410s (ApiHttpException.isDecommission) —
+            // is a normal transient failure.
+            if (ex is ApiHttpException && ex.isDecommission) {
                 DeviceDecommissioner.wipe(applicationContext, "plan fetch returned 410 — deleted in admin panel")
                 return@withContext Result.success()
             }
