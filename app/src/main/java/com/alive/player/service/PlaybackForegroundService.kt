@@ -50,11 +50,21 @@ class PlaybackForegroundService : Service() {
 
         // Cross-process watchdog: keep it running, and feed it a liveness signal from
         // a background thread so it still gets written even if the main Looper wedges.
-        WatchdogService.ensureRunning(applicationContext)
-        heartbeatJob = CoroutineScope(Dispatchers.IO).launch {
-            while (isActive) {
-                ProcessHeartbeat.write(applicationContext)
-                delay(10_000)
+        // Gated on pairing: a stop request for a service that is NOT running is a
+        // START (onCreate runs before requestStop's action is seen), so a
+        // decommission wipe can spin this service up for a moment — unpaired, that
+        // zombie lifecycle must not re-arm the watchdog the wipe just stopped or
+        // recreate the heartbeat file it just cleared, or the watchdog kills the
+        // fresh pairing screen ~90s later and resurrects playback. Pairing precedes
+        // every legitimate start of this service (PlaybackActivity and BootReceiver
+        // both check it), so nothing real loses its watchdog.
+        if (com.alive.player.settings.DevicePrefs(applicationContext).isPaired()) {
+            WatchdogService.ensureRunning(applicationContext)
+            heartbeatJob = CoroutineScope(Dispatchers.IO).launch {
+                while (isActive) {
+                    ProcessHeartbeat.write(applicationContext)
+                    delay(10_000)
+                }
             }
         }
     }

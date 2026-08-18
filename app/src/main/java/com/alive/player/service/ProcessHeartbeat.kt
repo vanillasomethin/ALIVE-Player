@@ -19,6 +19,13 @@ object ProcessHeartbeat {
         runCatching { file(context).writeText(System.currentTimeMillis().toString()) }
     }
 
+    /** Removes the signal entirely — for a deliberate, permanent stop (decommission).
+     *  An absent file reads as null in [millisSinceLastWrite], which the watchdog
+     *  treats as "no signal yet", never as a wedged process to kill. */
+    fun clear(context: Context) {
+        runCatching { file(context).delete() }
+    }
+
     /** Null if the heartbeat has never been written. */
     fun millisSinceLastWrite(context: Context): Long? {
         val f = file(context)

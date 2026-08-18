@@ -24,16 +24,20 @@ import java.io.FileInputStream
 object UpdateInstaller {
 
     /**
-     * True when a session committed with USER_ACTION_NOT_REQUIRED will be honoured:
-     * - Device Owner on Android 12+ (zero-touch provisioned fleet), or
+     * True when a committed session will install without a confirm dialog:
+     * - Device Owner on ANY supported API level — AOSP's PackageInstallerSession
+     *   has exempted the device owner from user confirmation on every release this
+     *   app supports (isInstallerDeviceOwnerLocked predates O; API 31's
+     *   setRequireUserAction only formalized the request side), so the zero-touch
+     *   fleet on Android 8-11 self-updates unattended too, or
      * - Android 12+ where this app is its own installer-of-record — true from the
      *   first successful self-update onward — combined with the manifest-declared
      *   UPDATE_PACKAGES_WITHOUT_USER_ACTION permission.
-     * Everything older/other needs the system confirm dialog.
+     * Everything else needs the system confirm dialog.
      */
     fun canInstallSilently(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
         if (OwnerSetup.isDeviceOwner(context)) return true
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
         return runCatching {
             context.packageManager.getInstallSourceInfo(context.packageName)
                 .installingPackageName == context.packageName
@@ -73,9 +77,12 @@ object UpdateInstaller {
         // SessionInfo.isCommitted is API 29 and createdMillis API 30 — touching them
         // on API 26-29 panels throws NoSuchMethodError (an Error, so no catch in
         // the worker chain saves the install; commit dies on its first line forever).
-        // Below R skip the in-flight probe: those devices only reach commit via the
-        // operator path, and the persisted session id plus the abandon sweep below
-        // already keep stale sessions from piling up or being misread.
+        // Below R skip the in-flight probe entirely. That is safe without it:
+        // checkMutex + @Synchronized serialize every caller (periodic, one-shot and
+        // the Settings button), and the persisted session id keeps the receiver from
+        // misreading ABORTED broadcasts of swept sessions. Worst case a re-commit
+        // abandons an in-flight twin and re-streams the same SHA-verified APK —
+        // convergent, and strictly better than the pre-guard crash.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val inFlightWindowMs = 10L * 60 * 1000
             if (sessions.any {

@@ -223,6 +223,12 @@ class PlaybackEngine(private val context: Context) {
             val fetchStatus = DevicePrefs(context).getFetchStatus()
             mainHandler.post {
                 if (plan == null || (plan.windows.isEmpty() && plan.fallbackItems.isEmpty())) {
+                    // Same exposure as advance()'s null-item branch: a video can be
+                    // mid-prepare with its first-frame deadline armed when the plan
+                    // empties under it. No render is coming to cancel it, so drop it
+                    // here or it fires under the waiting overlay, records a bogus
+                    // stall and evicts a file that was never the problem.
+                    cancelFirstFrameDeadline()
                     isWaitingForContent = true
                     val statusLine = buildStatusLine(fetchStatus)
                     onWaiting?.invoke(statusLine)
@@ -306,6 +312,10 @@ class PlaybackEngine(private val context: Context) {
         }
 
         if (item == null) {
+            // No render coming, so no first frame will ever cancel a leftover deadline
+            // from the previous (unrendered) clip — drop it here or it fires while the
+            // waiting overlay is up and re-runs this loop with a bogus stall recorded.
+            cancelFirstFrameDeadline()
             isWaitingForContent = true
             onWaiting?.invoke("No content for current time slot")
             startRetryCountdown()
@@ -321,6 +331,12 @@ class PlaybackEngine(private val context: Context) {
         val wv = webView
         val activeView = playerView
 
+        // Every new item invalidates the previous video's first-frame deadline — an
+        // unrendered clip we advanced past (deadline/error/ENDED) must not have its
+        // stale deadline fire mid-way through THIS item and cut it short. Ditto the
+        // 2s error-reload: this render IS the advance it was waiting for.
+        cancelFirstFrameDeadline()
+        cancelErrorReload()
         playItem(item)
 
         if (activeView == null || iv == null || wv == null || pvA == null || pvB == null) {
@@ -371,6 +387,7 @@ class PlaybackEngine(private val context: Context) {
                 player.prepare()
                 player.playWhenReady = true
                 startStallWatchdog(item)
+                startFirstFrameDeadline(item)
                 // Release the outgoing player after the swap is wired up; its last frame is
                 // held by keep_content_on_player_reset until the new first frame covers it.
                 outgoing?.let { old -> mainHandler.post { old.release() } }
@@ -579,6 +596,7 @@ class PlaybackEngine(private val context: Context) {
 
     private val videoEndListener = object : Player.Listener {
         override fun onRenderedFirstFrame() {
+            cancelFirstFrameDeadline()
             val old = pendingOldView
             pendingOldView = null
             val new = playerView ?: return
@@ -598,6 +616,7 @@ class PlaybackEngine(private val context: Context) {
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_ENDED) {
+                cancelFirstFrameDeadline()
                 cancelStallWatchdog()
                 cancelAdvanceTimer()
                 reloadAndAdvance()
@@ -606,15 +625,33 @@ class PlaybackEngine(private val context: Context) {
 
         override fun onPlayerError(error: PlaybackException) {
             android.util.Log.e("PlaybackEngine", "Video error ${error.errorCode}: ${error.message}")
+            cancelFirstFrameDeadline()
             cancelStallWatchdog()
             pendingOldView = null
             // A decode/source error on a cached file usually means the file is bad, not the
             // media — drop it so the next plan fetch re-downloads with a fresh hash check.
             currentItem?.let { evictCachedCopy(it) }
             cancelAdvanceTimer()
-            // Brief delay before advancing so we don't spin instantly on a broken playlist
-            mainHandler.postDelayed({ reloadAndAdvance() }, 2_000)
+            // Brief delay before advancing so we don't spin instantly on a broken
+            // playlist. Tracked (not a bare lambda) so renderItem/stop can cancel it —
+            // an orphaned reload surviving into the NEXT item's slot would cut that
+            // item short ~2s in.
+            cancelErrorReload()
+            val reload = Runnable {
+                errorReloadRunnable = null
+                reloadAndAdvance()
+            }
+            errorReloadRunnable = reload
+            mainHandler.postDelayed(reload, 2_000)
         }
+    }
+
+    // Pending 2s reload posted by onPlayerError; cancelled by the next render or stop().
+    private var errorReloadRunnable: Runnable? = null
+
+    private fun cancelErrorReload() {
+        errorReloadRunnable?.let { mainHandler.removeCallbacks(it) }
+        errorReloadRunnable = null
     }
 
     // ── Decoder stall watchdog ───────────────────────────────────────────────────
@@ -656,6 +693,9 @@ class PlaybackEngine(private val context: Context) {
                     DevicePrefs(context).setLastStall(reason, now)
                     cancelStallWatchdog()
                     cancelAdvanceTimer()
+                    // Symmetry with the deadline/error fire paths: every fire path
+                    // cancels the other two so no stale trigger survives the advance.
+                    cancelFirstFrameDeadline()
                     evictCachedCopy(item)
                     reloadAndAdvance()
                     return
@@ -674,6 +714,39 @@ class PlaybackEngine(private val context: Context) {
         stallRunnable = null
     }
 
+    // ── First-frame deadline ─────────────────────────────────────────────────────
+    // The slot timer is armed only in onRenderedFirstFrame (see that comment), which
+    // leaves one uncovered state: a decoder that accepts input but never renders a
+    // frame — no onPlayerError, isPlaying stays false, so the position-based stall
+    // watchdog above resets forever and nothing ever advances. The blocklist in
+    // safeMediaCodecSelector only names the decoders we KNOW do this; this deadline
+    // bounds the ones it doesn't (and a network stream trickling in STATE_BUFFERING
+    // indefinitely): no first frame within FIRST_FRAME_DEADLINE_MS of prepare() is
+    // treated exactly like a stall — evict, record, move on.
+    private var firstFrameDeadlineRunnable: Runnable? = null
+
+    private fun startFirstFrameDeadline(item: PlanItem) {
+        cancelFirstFrameDeadline()
+        val deadline = Runnable {
+            firstFrameDeadlineRunnable = null
+            val reason = "no first frame ${FIRST_FRAME_DEADLINE_MS / 1000}s after prepare: ${item.contentVersionId}"
+            android.util.Log.e("PlaybackEngine", reason)
+            lastStallReason = reason
+            DevicePrefs(context).setLastStall(reason, System.currentTimeMillis())
+            cancelStallWatchdog()
+            cancelAdvanceTimer()
+            evictCachedCopy(item)
+            reloadAndAdvance()
+        }
+        firstFrameDeadlineRunnable = deadline
+        mainHandler.postDelayed(deadline, FIRST_FRAME_DEADLINE_MS)
+    }
+
+    private fun cancelFirstFrameDeadline() {
+        firstFrameDeadlineRunnable?.let { mainHandler.removeCallbacks(it) }
+        firstFrameDeadlineRunnable = null
+    }
+
     private fun evictCachedCopy(item: PlanItem) {
         val sha = item.sha256 ?: return
         val ext = item.ext ?: return
@@ -683,6 +756,11 @@ class PlaybackEngine(private val context: Context) {
     private companion object {
         const val STALL_POLL_MS    = 2_000L
         const val STALL_TIMEOUT_MS = 10_000L
+        // Upper bound from prepare() to first rendered frame before the clip is treated
+        // as wedged. Normal prepare+decode is ~0.5-1s on these boxes; 20s leaves room
+        // for a slow network fallback (item not yet downloaded) without letting a
+        // silently-wedged decoder freeze the screen past one slot length.
+        const val FIRST_FRAME_DEADLINE_MS = 20_000L
         // Safety margin for showImage()'s fallback timer when Glide never calls back.
         const val IMAGE_LOAD_GRACE_MS = 15_000L
         // Slack added to a video's slot timer so the clip's own STATE_ENDED (natural end)
@@ -860,6 +938,7 @@ class PlaybackEngine(private val context: Context) {
                 player.prepare()
                 player.playWhenReady = true
                 startStallWatchdog(item)
+                startFirstFrameDeadline(item)
                 // Slot timer armed in onRenderedFirstFrame, not here — see the note in
                 // renderItem()'s video branch and videoEndListener.onRenderedFirstFrame.
             }
@@ -886,6 +965,7 @@ class PlaybackEngine(private val context: Context) {
         // resurrect the loop on an engine whose service is shutting down.
         isWaitingForContent = false
         cancelAdvanceTimer()
+        cancelErrorReload()
         retryRunnable?.let { mainHandler.removeCallbacks(it) }
         retryRunnable = null
         countdownRunnable?.let { mainHandler.removeCallbacks(it) }
@@ -893,6 +973,7 @@ class PlaybackEngine(private val context: Context) {
         val now = NtpSyncManager.now(context)
         currentItem?.let { emitCompleteEvent(it, now) }
         currentItem = null
+        cancelFirstFrameDeadline()
         cancelStallWatchdog()
         releasePreload()   // tear down any preloaded next-clip player + its scheduled runnable
         // Capture and null-out before posting to avoid double-release if stop() is called twice
