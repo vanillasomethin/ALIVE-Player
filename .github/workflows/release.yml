@@ -22,6 +22,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Fleet versionCode = 999500 + run_number. The deployed fleet is hand-numbered
+      # in the 999xxx range (999520 as of 2026-08-17), so a raw run_number (~65) reads
+      # as a downgrade on every device — they ignore the update, and the low-numbered
+      # latest.json this workflow publishes silently clobbers the real fleet manifest
+      # on every push to main. The offset keeps CI monotonic AND above the fleet, so a
+      # main push is directly installable and hand-published manifests are obsolete.
+      # If a manual build ever ships above 999500+run_number, bump the base here.
+      # (GitHub expressions can't do arithmetic, so compute once into the job env.)
+      - name: Compute fleet versionCode
+        run: echo "FLEET_VERSION=$(( 999500 + ${{ github.run_number }} ))" >> "$GITHUB_ENV"
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -58,7 +69,7 @@ jobs:
       # CI time flat — bare assembleDebug would build every flavor.
       - name: Build debug APK
         env:
-          BUILD_NUMBER: ${{ github.run_number }}
+          BUILD_NUMBER: ${{ env.FLEET_VERSION }}
         run: ./gradlew assembleGenericDebug --no-daemon
 
       # Flavors moved the output under apk/generic/debug/; stage it back at the
@@ -67,7 +78,7 @@ jobs:
         run: |
           mkdir -p app/build/outputs/apk/debug
           mv app/build/outputs/apk/generic/debug/app-generic-debug.apk \
-             app/build/outputs/apk/debug/alive-player-${{ github.run_number }}.apk
+             app/build/outputs/apk/debug/alive-player-${FLEET_VERSION}.apk
 
       # OTA manifest published alongside the APK, so /api/device/update-check reads the
       # release itself instead of three hand-maintained Vercel env vars. Those had to be
@@ -75,13 +86,13 @@ jobs:
       # "no update" and OTA silently stopped working with nothing to notice.
       - name: Write OTA manifest
         run: |
-          APK=app/build/outputs/apk/debug/alive-player-${{ github.run_number }}.apk
+          APK=app/build/outputs/apk/debug/alive-player-${FLEET_VERSION}.apk
           SHA=$(sha256sum "$APK" | cut -d' ' -f1)
           cat > app/build/outputs/apk/debug/latest.json <<JSON
           {
-            "versionCode": ${{ github.run_number }},
-            "versionName": "1.0.${{ github.run_number }}",
-            "apkUrl": "https://github.com/${{ github.repository }}/releases/download/sideload-latest/alive-player-${{ github.run_number }}.apk",
+            "versionCode": ${FLEET_VERSION},
+            "versionName": "1.0.${FLEET_VERSION}",
+            "apkUrl": "https://github.com/${{ github.repository }}/releases/download/sideload-latest/alive-player-${FLEET_VERSION}.apk",
             "sha256": "$SHA",
             "commit": "${{ github.sha }}"
           }
@@ -92,18 +103,18 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: sideload-latest
-          name: "ALIVE Player – Sideload APK (build ${{ github.run_number }})"
+          name: "ALIVE Player – Sideload APK (build ${{ env.FLEET_VERSION }})"
           body: |
             **Sideload URL for Downloader by AFTVnews:**
             Paste this URL into the Downloader app on your Android TV / Fire TV device.
 
-            `https://github.com/${{ github.repository }}/releases/download/sideload-latest/alive-player-${{ github.run_number }}.apk`
+            `https://github.com/${{ github.repository }}/releases/download/sideload-latest/alive-player-${{ env.FLEET_VERSION }}.apk`
 
             Paired screens update themselves from this release via OTA — `latest.json`
             below is the manifest `/api/device/update-check` serves to them.
             Build: `${{ github.sha }}`
           files: |
-            app/build/outputs/apk/debug/alive-player-${{ github.run_number }}.apk
+            app/build/outputs/apk/debug/alive-player-${{ env.FLEET_VERSION }}.apk
             app/build/outputs/apk/debug/latest.json
           prerelease: true
 
@@ -118,6 +129,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Same fleet-offset versionCode as the sideload job — see the comment there.
+      - name: Compute fleet versionCode
+        run: echo "FLEET_VERSION=$(( 999500 + ${{ github.run_number }} ))" >> "$GITHUB_ENV"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -147,7 +162,7 @@ jobs:
 
       - name: Build signed release AAB
         env:
-          BUILD_NUMBER: ${{ github.run_number }}
+          BUILD_NUMBER: ${{ env.FLEET_VERSION }}
           SIGNING_STORE_FILE: ${{ github.workspace }}/release.jks
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
