@@ -35,7 +35,7 @@ object DeviceDecommissioner {
     // UpdateCheck), which cancels this coroutine — without this every subsequent
     // suspending dao.clear() would throw CancellationException (swallowed by
     // runCatching) and the "wiped" device would keep its plan/PoP/asset rows.
-    suspend fun wipe(context: Context, reason: String): Unit = withContext(NonCancellable) {
+    suspend fun wipe(context: Context, reason: String, removedRemotely: Boolean = true): Unit = withContext(NonCancellable) {
         val appContext = context.applicationContext
         Log.i(TAG, "Decommissioning device: $reason")
 
@@ -85,6 +85,13 @@ object DeviceDecommissioner {
         runCatching { db.incidentDao().clearAll() }
         runCatching { appContext.getExternalFilesDir("cache")?.deleteRecursively() }
         runCatching { appContext.cacheDir.deleteRecursively() }
+
+        // Remote removal (deleted in admin via 410/FCM): leave a flag — set AFTER
+        // clearAll so it survives — so PairingActivity tells the operator the screen was
+        // removed and needs re-pairing, instead of dropping to pairing with no context.
+        // Survives even when this launch is dropped (non-owner 29+): BootReceiver brings
+        // pairing up next boot and the banner still shows. Manual reset skips this.
+        if (removedRemotely) DevicePrefs(appContext).setDecommissioned()
 
         // CLEAR_TASK tears down PlaybackActivity so the dead plan can't stay on
         // screen. Legal from the background on Device-Owner installs and API < 29;

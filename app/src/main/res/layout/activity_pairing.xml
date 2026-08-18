@@ -6,6 +6,26 @@
     android:background="@color/alive_ink"
     android:padding="48dp">
 
+    <!-- Shown only after a remote decommission (screen deleted in admin) — see
+         PairingActivity.onCreate / DeviceDecommissioner. Explains why the screen returned
+         to pairing instead of going silently dark. GONE by default. -->
+    <TextView
+        android:id="@+id/decommission_banner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:background="@drawable/bg_red_button"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:gravity="center"
+        android:text="This screen was removed from ALIVE. Pair it again below to reactivate it."
+        android:textColor="@color/alive_white"
+        android:textSize="14sp"
+        android:fontFamily="@font/poppins_regular"
+        android:visibility="gone" />
+
     <!-- Main content: two-column on landscape TV -->
     <LinearLayout
         android:id="@+id/main_content"
@@ -250,6 +270,8 @@
                     android:textStyle="bold"
                     android:fontFamily="@font/poppins_bold"
                     android:letterSpacing="0.15"
+                    android:maxLines="1"
+                    android:singleLine="true"
                     android:layout_marginBottom="8dp" />
 
                 <TextView
