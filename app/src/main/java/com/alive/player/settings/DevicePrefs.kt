@@ -217,6 +217,22 @@ class DevicePrefs(private val context: Context) {
         statusPrefs.edit().clear().apply()
     }
 
+    // ── Decommission banner ──────────────────────────────────────────────────────
+    // Set (immediately AFTER clearAll, so it survives the wipe) when the screen is
+    // decommissioned remotely — deleted in the admin panel via a 410 or FCM push.
+    // PairingActivity reads it once to explain WHY the screen returned to pairing
+    // instead of just going silently dark, then clears it. A manual "Reset Device"
+    // does not set it (the operator already knows why).
+    fun setDecommissioned() {
+        statusPrefs.edit().putBoolean(KEY_DECOMMISSIONED, true).apply()
+    }
+
+    fun wasDecommissioned(): Boolean = statusPrefs.getBoolean(KEY_DECOMMISSIONED, false)
+
+    fun clearDecommissioned() {
+        statusPrefs.edit().remove(KEY_DECOMMISSIONED).apply()
+    }
+
     companion object {
         /** Built once per process; see the [prefs] kdoc for why this must not be per-instance. */
         @Volatile private var encryptedInstance: android.content.SharedPreferences? = null
@@ -261,6 +277,7 @@ class DevicePrefs(private val context: Context) {
         private const val KEY_LAST_STALL             = "diag_last_stall"
         private const val KEY_LAST_STALL_MS          = "diag_last_stall_ms"
         private const val KEY_PLAYBACK_ALIVE_MS      = "diag_playback_alive_ms"
+        private const val KEY_DECOMMISSIONED         = "was_decommissioned"
 
         private const val DEFAULT_RETRY_INTERVAL_MS      = 30_000L
         private const val DEFAULT_TRANSITION_DURATION_MS = 600L

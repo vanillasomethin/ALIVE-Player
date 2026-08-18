@@ -26,7 +26,7 @@ import com.alive.player.worker.UpdateScheduler
  */
 object DeviceDecommissioner {
 
-    suspend fun wipe(context: Context, reason: String) {
+    suspend fun wipe(context: Context, reason: String, removedRemotely: Boolean = true) {
         val appContext = context.applicationContext
         Log.i(TAG, "Decommissioning device: $reason")
 
@@ -46,6 +46,13 @@ object DeviceDecommissioner {
         runCatching { appContext.getExternalFilesDir("cache")?.deleteRecursively() }
         runCatching { appContext.cacheDir.deleteRecursively() }
         DevicePrefs(appContext).clearAll()
+
+        // Remote removal (deleted in admin via 410/FCM): leave a flag — set AFTER
+        // clearAll so it survives — so PairingActivity tells the operator the screen was
+        // removed and needs re-pairing, instead of dropping to pairing with no context.
+        // Survives even when this launch is dropped (non-owner 29+): BootReceiver brings
+        // pairing up next boot and the banner still shows. Manual reset skips this.
+        if (removedRemotely) DevicePrefs(appContext).setDecommissioned()
 
         // CLEAR_TASK tears down PlaybackActivity so the dead plan can't stay on
         // screen. Legal from the background on Device-Owner installs and API < 29;
