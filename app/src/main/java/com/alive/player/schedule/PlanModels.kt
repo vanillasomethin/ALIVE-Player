@@ -17,6 +17,11 @@ data class PlanItem(
     // proof-of-play event so the server can split guaranteed vs bonus plays.
     val slotPosition: Int? = null,
     val isFiller: Boolean = false,
+    // Sound Ad add-on (slot-mode stores only): true for the one loop position the
+    // server has designated as this store's sound-enabled slot. Base ads always stay
+    // silent — see PlaybackEngine.resolveVolume(), which also enforces the once/hour
+    // cadence and the store-owner mute override (Plan.soundAdMuted).
+    val soundEligible: Boolean = false,
 )
 
 data class Plan(
@@ -92,6 +97,7 @@ fun parsePlan(json: String): Plan {
                 scheduleId = scheduleId,
                 slotPosition = if (o.has("slotPosition")) o.getInt("slotPosition") else null,
                 isFiller = o.optBoolean("isFiller", false),
+                soundEligible = o.optBoolean("soundEligible", false),
             )
         }
 

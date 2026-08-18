@@ -67,6 +67,7 @@ class DeviceApiProvider(
             // a content re-download, but must still be read on every poll (including the
             // notModified short-circuit below).
             val orientation = root.optString("orientation", null)
+            val soundAdMuted = root.optBoolean("soundAdMuted", false)
             val config = root.optJSONObject("config")?.let {
                 PlayerConfig(
                     retryIntervalMs = if (it.has("retryIntervalMs")) it.getLong("retryIntervalMs") else null,
@@ -86,6 +87,7 @@ class DeviceApiProvider(
                     notModified = true,
                     orientation = orientation,
                     config = config,
+                    soundAdMuted = soundAdMuted,
                 )
             }
             fun parseItems(arr: JSONArray) = (0 until arr.length()).map { i ->
@@ -126,6 +128,7 @@ class DeviceApiProvider(
                 orientation = orientation,
                 config = config,
                 fallbackItems = fallbackItems,
+                soundAdMuted = soundAdMuted,
             )
         } finally {
             conn.disconnect()
