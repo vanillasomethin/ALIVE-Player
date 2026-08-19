@@ -16,13 +16,21 @@ class AliveMessagingService : FirebaseMessagingService() {
     /**
      * Called when FCM assigns or rotates the device token.
      * Upload to backend so the server knows where to push plan_updated notifications.
+     * This one-shot is lossy (fires before pairing on a fresh install; upload can
+     * fail) — HeartbeatWorker re-uploads whenever issued != uploaded, so a miss
+     * here heals within one heartbeat instead of lasting until the next rotation.
      */
     override fun onNewToken(token: String) {
         val prefs = DevicePrefs(applicationContext)
         prefs.setFcmToken(token)
         val deviceToken = prefs.getDeviceToken() ?: return
         CoroutineScope(Dispatchers.IO).launch {
-            try { DeviceApiProvider().updateFcmToken(deviceToken, token) } catch (_: Exception) {}
+            try {
+                DeviceApiProvider().updateFcmToken(deviceToken, token)
+                prefs.setUploadedFcmToken(token)
+            } catch (_: Exception) {
+                // HeartbeatWorker retries — issued token stays != uploaded token.
+            }
         }
     }
 
@@ -38,11 +46,17 @@ class AliveMessagingService : FirebaseMessagingService() {
      *                  device API answers on their next call.)
      */
     override fun onMessageReceived(message: RemoteMessage) {
+        // Destructive commands must arrive on this device's own token, never via a
+        // topic: every install subscribes to the fleet topic (AliveApplication), so
+        // one server-side mistake publishing decommission/reboot there would wipe or
+        // reboot the entire unattended fleet at once. The server keeps them
+        // token-only by convention (fcm.ts); this guard makes the player enforce it.
+        val fromTopic = message.from?.startsWith("/topics/") == true
         when (message.data["type"]) {
             "plan_updated" -> PlanFetchScheduler.scheduleImmediate(applicationContext)
             "health_ping"  -> HeartbeatScheduler.scheduleImmediate(applicationContext)
-            "reboot"       -> OwnerSetup.rebootDevice(applicationContext)
-            "decommission" -> CoroutineScope(Dispatchers.IO).launch {
+            "reboot"       -> if (!fromTopic) OwnerSetup.rebootDevice(applicationContext)
+            "decommission" -> if (!fromTopic) CoroutineScope(Dispatchers.IO).launch {
                 DeviceDecommissioner.wipe(applicationContext, "decommission push — deleted in admin panel")
             }
         }
