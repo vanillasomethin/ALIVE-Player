@@ -56,6 +56,28 @@ class HeartbeatWorker(
                 }
             }
             if (pending.isNotEmpty()) incidentDao.deleteByIds(pending.map { it.id })
+            // FCM token self-heal: onNewToken's one-shot upload misses whenever it
+            // fires before pairing (every fresh sideload) or the network drops it,
+            // leaving the server pushing plan_updated at a token this device no
+            // longer holds — updates then crawl in on the 15-min poll instead of
+            // arriving in seconds. Compare issued vs server-acknowledged here and
+            // re-upload on drift; runs after a successful heartbeat so pairing and
+            // connectivity are known-good. Failure is silent — next run retries.
+            runCatching {
+                // A wiped-then-re-paired install has no stored token and FCM will not
+                // re-fire onNewToken for it (the registration didn't rotate) — ask the
+                // SDK directly so re-commissioned devices regain targeted push too.
+                val issued = prefs.getFcmToken() ?: runCatching {
+                    com.google.android.gms.tasks.Tasks.await(
+                        com.google.firebase.messaging.FirebaseMessaging.getInstance().token,
+                        10, java.util.concurrent.TimeUnit.SECONDS,
+                    )?.also { prefs.setFcmToken(it) }
+                }.getOrNull()
+                if (issued != null && issued != prefs.getUploadedFcmToken()) {
+                    DeviceApiProvider().updateFcmToken(prefs.getDeviceToken() ?: return@runCatching, issued)
+                    prefs.setUploadedFcmToken(issued)
+                }
+            }
             Result.success()
         } catch (ex: Exception) {
             Result.retry()

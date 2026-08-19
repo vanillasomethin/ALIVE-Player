@@ -16,6 +16,19 @@ import kotlin.system.exitProcess
 class AliveApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+
+        // Belt-and-braces push channel: every install joins the fleet topic, so a
+        // plan_updated broadcast reaches this device even when the server holds a
+        // stale/absent per-device token (fresh sideloads miss onNewToken's upload —
+        // it fires before pairing). Topic membership is managed by Play services:
+        // it survives token rotation and retries registration itself. The handler
+        // is idempotent (an unaffected device's fetch just 304s), so over-delivery
+        // is harmless. Targeted commands (decommission, reboot) stay token-only.
+        runCatching {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance()
+                .subscribeToTopic(FLEET_TOPIC)
+        }
+
         val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
@@ -37,5 +50,10 @@ class AliveApplication : Application() {
                     exitProcess(1)
                 }
         }
+    }
+
+    companion object {
+        /** FCM topic every player subscribes to; the studio broadcasts plan_updated here. */
+        const val FLEET_TOPIC = "fleet"
     }
 }

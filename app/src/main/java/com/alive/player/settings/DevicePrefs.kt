@@ -35,6 +35,7 @@ class DevicePrefs(private val context: Context) {
             .putLong(KEY_PAIRED_AT, System.currentTimeMillis())
             .remove(KEY_PAIRING_CODE)    // no longer needed once confirmed
             .apply()
+        invalidateUploadedFcmToken()
     }
 
     /**
@@ -51,6 +52,13 @@ class DevicePrefs(private val context: Context) {
             // as confirmed and keep playing a dead identity's cached plan.
             .remove(KEY_PAIRED_AT)
             .apply()
+        invalidateUploadedFcmToken()
+    }
+
+    /** Any pairing-identity change may mean a fresh server row that has never seen
+     *  our FCM token — forget the ack so the next heartbeat re-uploads exactly once. */
+    private fun invalidateUploadedFcmToken() {
+        statusPrefs.edit().remove(KEY_FCM_TOKEN_UPLOADED).apply()
     }
 
     /** Marks the device as admin-confirmed so [isPaired] returns true. */
@@ -110,6 +118,19 @@ class DevicePrefs(private val context: Context) {
     }
 
     fun getFcmToken(): String? = statusPrefs.getString(KEY_FCM_TOKEN, null)
+
+    /**
+     * The token the SERVER last acknowledged, as opposed to the one FCM last issued
+     * ([setFcmToken]). onNewToken's one-shot upload is lossy — it fires before pairing
+     * on a fresh install and swallows network failures — so HeartbeatWorker compares
+     * these two and re-uploads whenever they differ. Until they match, targeted pushes
+     * (plan_updated, decommission) go to a token the device no longer holds.
+     */
+    fun setUploadedFcmToken(token: String) {
+        statusPrefs.edit().putString(KEY_FCM_TOKEN_UPLOADED, token).apply()
+    }
+
+    fun getUploadedFcmToken(): String? = statusPrefs.getString(KEY_FCM_TOKEN_UPLOADED, null)
 
     fun setClockOffsetMs(offsetMs: Long) {
         statusPrefs.edit().putLong(KEY_CLOCK_OFFSET_MS, offsetMs).apply()
@@ -246,6 +267,7 @@ class DevicePrefs(private val context: Context) {
         private const val KEY_PLAN_UPDATED_MS = "plan_updated_ms"
         private const val KEY_ORIENTATION     = "orientation_mode"
         private const val KEY_FCM_TOKEN       = "fcm_token"
+        private const val KEY_FCM_TOKEN_UPLOADED = "fcm_token_uploaded"
         private const val KEY_CLOCK_OFFSET_MS = "clock_offset_ms"
         private const val KEY_LAST_NTP_SYNC_MS = "last_ntp_sync_ms"
         private const val KEY_RETRY_INTERVAL_MS      = "cfg_retry_interval_ms"
