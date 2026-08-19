@@ -11,6 +11,12 @@ object DecoderCapabilities {
     val BROKEN_HARDWARE_DECODER_NAMES = setOf(
         "OMX.hisi.video.decoder.avc",
         "OMX.realtek.video.decoder",
+        // Realtek rtd2841a (2K D5STV): the Codec2 HEVC decoder starts, then dies with
+        // CodecException "Error 0xe" on the first buffers of every clip (verified on
+        // 720x1280@30 Main-profile HEVC well within its advertised caps). A runtime
+        // codec error -- not an init failure -- so MediaCodecRenderer never falls back
+        // on its own and playback black-screens in a retry loop.
+        "c2.realtek.video.hevc.decoder",
     )
 
     private fun hasReliableHardwareDecoder(mimeType: String): Boolean =

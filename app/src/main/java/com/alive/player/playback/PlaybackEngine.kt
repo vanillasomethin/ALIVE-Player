@@ -165,6 +165,11 @@ class PlaybackEngine(private val context: Context) {
             pendingItem = null
             renderItem(it)
         }
+
+        if (!frozenGlassArmed) {
+            frozenGlassArmed = true
+            mainHandler.postDelayed(frozenGlassRunnable, FROZEN_GLASS_CHECK_MS)
+        }
     }
 
     fun detachViews() {
@@ -215,7 +220,38 @@ class PlaybackEngine(private val context: Context) {
         return if (localFile != null) android.net.Uri.fromFile(localFile) else android.net.Uri.parse(item.uri)
     }
 
+    // ── Loop-kick debounce ───────────────────────────────────────────────
+    // startLoop() is called from several independent tickers (30s plan poll, 5s
+    // download poll while waiting, retry countdown). Each call ends in renderItem()
+    // → prepare()/surface churn. A dashboard editing session that saves/force-syncs
+    // repeatedly delivers several full plans a minute, and back-to-back re-kicks
+    // wedged a MediaTek panel's EGL window (2026-08-19: last frame frozen on glass
+    // while the loop kept advancing — "EGLNativeWindowType disconnect failed").
+    // Leading edge stays immediate so ordinary kicks are untouched; anything more
+    // inside the window collapses into ONE trailing kick. Worst added latency for
+    // a waiting screen is the window itself.
+    private var lastLoopKickElapsedMs = 0L
+    private var pendingLoopKick: Runnable? = null
+
     fun startLoop() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        val sinceLast = now - lastLoopKickElapsedMs
+        if (sinceLast >= LOOP_KICK_MIN_INTERVAL_MS) {
+            lastLoopKickElapsedMs = now
+            startLoopNow()
+        } else if (pendingLoopKick == null) {
+            val kick = Runnable {
+                pendingLoopKick = null
+                lastLoopKickElapsedMs = android.os.SystemClock.elapsedRealtime()
+                startLoopNow()
+            }
+            pendingLoopKick = kick
+            mainHandler.postDelayed(kick, LOOP_KICK_MIN_INTERVAL_MS - sinceLast)
+        }
+        // else: a trailing kick is already queued — this bump is absorbed by it.
+    }
+
+    private fun startLoopNow() {
         retryRunnable?.let { mainHandler.removeCallbacks(it) }
         countdownRunnable?.let { mainHandler.removeCallbacks(it) }
         CoroutineScope(Dispatchers.IO).launch {
@@ -753,9 +789,180 @@ class PlaybackEngine(private val context: Context) {
         AssetDownloader.evictCorrupt(context, item.contentVersionId, "current", sha, ext)
     }
 
+    // ── Frozen-glass watchdog ────────────────────────────────────────────
+    // Catches the failure mode the heartbeat/stall watchdogs are blind to: the engine
+    // advances items and reports plays, ExoPlayer decodes without error — but frames
+    // stopped reaching the display (wedged EGL window; observed on MediaTek m7632 after
+    // a burst of plan re-kicks, 2026-08-19: last frame stuck on glass while
+    // proof-of-play kept flowing, cleared only by a reboot).
+    //
+    // Signal: SurfaceTexture.getTimestamp() — the presentation time of the most
+    // recently LATCHED frame. It advances whenever a decoded frame actually reaches the
+    // view's surface, so it is content-independent: a static-frame creative still
+    // latches ~30 frames a second. (Pixel sampling was tried first and rejected — a
+    // static creative is pixel-identical while perfectly healthy, and any sampler
+    // period dividing the playlist loop aliases onto the same frame.)
+    //
+    // Evidence is accumulated as TIME SPENT PLAYING WITH NO LATCH, not a streak of
+    // consecutive probes: the wedge this targets persists across item boundaries (the
+    // loop keeps advancing), while clips here are 5-15s, so any per-item or
+    // consecutive-probe counter would be reset by normal advancing before it could ever
+    // trip. Only an observed latch advance clears the accumulator.
+    //
+    // Recovery REBUILDS THE VIEW HIERARCHY (Activity.recreate) rather than killing the
+    // process. A kill was the first design and was rejected: the foreground service is
+    // START_STICKY and would respawn the engine with no activity bound, which emits
+    // full-duration COMPLETE proof-of-play — advertiser-billed plays — against a black
+    // screen until the UI returns, and the alarm-driven relaunch is subject to
+    // background-activity-start rules that silently drop it on non-owner installs.
+    // recreate() builds a fresh TextureView (the thing that is actually wedged) while
+    // the service, engine and playlist position survive, so the worst case of a false
+    // positive is a ~1s visual blip instead of a killed screen. That asymmetry is what
+    // makes the residual detection uncertainty acceptable.
+    private var frozenGlassArmed = false
+    private var lastLatchTimestampNs = 0L
+    private var lastSurfaceTextureId = 0
+    private var lastGlassCheckElapsedMs = 0L
+    private var noLatchAccumMs = 0L
+    private var latchEverAdvanced = false
+    private var lastGlassRecoveryElapsedMs = 0L
+
+    /**
+     * Invoked on the main thread when frame delivery has provably stalled. Set by
+     * PlaybackActivity to recreate itself; null when no activity is bound, in which
+     * case detection is skipped entirely — there is no surface to rebuild and a
+     * headless engine must never "recover" into billing plays for a screen that has
+     * no UI at all.
+     */
+    var onGlassWedged: (() -> Unit)? = null
+
+    private val frozenGlassRunnable = object : Runnable {
+        override fun run() {
+            runCatching { checkFrozenGlass() }
+            mainHandler.postDelayed(this, FROZEN_GLASS_CHECK_MS)
+        }
+    }
+
+    private fun cancelFrozenGlassWatchdog() {
+        mainHandler.removeCallbacks(frozenGlassRunnable)
+        frozenGlassArmed = false
+        resetFrozenGlassState()
+    }
+
+    private fun resetFrozenGlassState() {
+        noLatchAccumMs = 0L
+        lastGlassCheckElapsedMs = 0L
+        lastLatchTimestampNs = 0L
+        lastSurfaceTextureId = 0
+    }
+
+    private fun checkFrozenGlass() {
+        val nowElapsed = android.os.SystemClock.elapsedRealtime()
+        val sinceLastCheck = if (lastGlassCheckElapsedMs == 0L) 0L else nowElapsed - lastGlassCheckElapsedMs
+        lastGlassCheckElapsedMs = nowElapsed
+
+        // "Not judgeable" conditions SKIP (no accumulation, no reset) rather than
+        // clearing the accumulator. Clearing would make a mixed playlist un-judgeable
+        // forever: renderItem nulls exoPlayer for every image item, so an
+        // images-and-video loop would wipe the evidence several times a minute and the
+        // 60s threshold could never be reached. Only positive evidence of health (a
+        // latch advance) or an invalidated baseline (new surface) clears it.
+        val pv = playerView ?: return
+        val player = exoPlayer ?: return
+        // No bound activity — nothing to rebuild, and nothing on screen to judge.
+        if (onGlassWedged == null) return
+
+        // Only a playing VIDEO is expected to produce a frame stream. Images, web items,
+        // the waiting overlay and a paused/buffering player legitimately latch nothing.
+        if (isWaitingForContent || currentItem?.type != "video" || !player.isPlaying) return
+
+        // Display power state. The engine is service-owned and keeps decoding while the
+        // panel is asleep or in HDMI-CEC standby; the compositor stops driving frames
+        // then, so a healthy screen would look exactly like a wedge. isShown/
+        // hasWindowFocus do NOT cover this — they are view/window attachment only.
+        val display = (context.getSystemService(Context.DISPLAY_SERVICE) as? android.hardware.display.DisplayManager)
+            ?.getDisplay(android.view.Display.DEFAULT_DISPLAY)
+        if (display != null && display.state != android.view.Display.STATE_ON) return
+        // Window must be attached AND frontmost: a technician in Settings (MENU /
+        // triple-select servicing flow) or any dialog on top stops frame delivery
+        // without anything being wrong.
+        if (!pv.isShown || !pv.hasWindowFocus()) return
+
+        val texture = pv.videoSurfaceView as? android.view.TextureView
+            ?: return  // SurfaceView build: signal unavailable, never judge
+        val surfaceTexture = texture.surfaceTexture ?: return
+
+        // A different SurfaceTexture means a fresh surface (double-buffer swap, view
+        // rebuild): its timestamps are not comparable with the previous one, so start
+        // a new baseline instead of reading the discontinuity as a stall.
+        val textureId = System.identityHashCode(surfaceTexture)
+        if (textureId != lastSurfaceTextureId) {
+            lastSurfaceTextureId = textureId
+            lastLatchTimestampNs = runCatching { surfaceTexture.timestamp }.getOrDefault(0L)
+            noLatchAccumMs = 0L
+            return
+        }
+
+        val latchNs = runCatching { surfaceTexture.timestamp }.getOrDefault(0L)
+        if (latchNs != lastLatchTimestampNs) {
+            // Frames are reaching the surface.
+            lastLatchTimestampNs = latchNs
+            latchEverAdvanced = true
+            noLatchAccumMs = 0L
+            return
+        }
+
+        // Never having seen this device advance the timestamp at all means the signal is
+        // simply unavailable here (some vendor stacks never populate it) — not evidence
+        // of a wedge. Without this the detector would "trip" permanently on such
+        // hardware from the very first probe.
+        if (!latchEverAdvanced) return
+
+        noLatchAccumMs += sinceLastCheck
+        if (noLatchAccumMs < FROZEN_GLASS_TRIP_MS) return
+        if (nowElapsed - lastGlassRecoveryElapsedMs < FROZEN_GLASS_RECOVERY_COOLDOWN_MS &&
+            lastGlassRecoveryElapsedMs != 0L
+        ) {
+            return
+        }
+        recoverFromFrozenGlass(nowElapsed)
+    }
+
+    private fun recoverFromFrozenGlass(nowElapsed: Long) {
+        lastGlassRecoveryElapsedMs = nowElapsed
+        val stalledMs = noLatchAccumMs
+        resetFrozenGlassState()
+        android.util.Log.e(
+            "PlaybackEngine",
+            "Frozen glass: no frame latched during ${stalledMs}ms of playing video — rebuilding views",
+        )
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching {
+                AppDatabase.get(context).incidentDao().insert(
+                    com.alive.player.data.Incident(
+                        type = "FROZEN_GLASS_RECOVERED",
+                        timestampUtcEpochMs = System.currentTimeMillis(),
+                        metadataJson = """{"stalledMs":$stalledMs}""",
+                    )
+                )
+            }
+        }
+        onGlassWedged?.invoke()
+    }
+
     private companion object {
         const val STALL_POLL_MS    = 2_000L
         const val STALL_TIMEOUT_MS = 10_000L
+        // Loop-kick debounce window (see startLoop). Longer than the 5s download poll
+        // so a waiting screen still starts within one window of its last download.
+        const val LOOP_KICK_MIN_INTERVAL_MS = 10_000L
+        // Frozen-glass watchdog: probe cadence, and how much accumulated playing-time
+        // with no frame latch counts as a wedge (60s ≈ 4-12 normal clips, far longer
+        // than any legitimate delivery gap).
+        const val FROZEN_GLASS_CHECK_MS = 10_000L
+        const val FROZEN_GLASS_TRIP_MS = 60_000L
+        // Minimum spacing between view rebuilds if the wedge survives one.
+        const val FROZEN_GLASS_RECOVERY_COOLDOWN_MS = 5 * 60_000L
         // Upper bound from prepare() to first rendered frame before the clip is treated
         // as wedged. Normal prepare+decode is ~0.5-1s on these boxes; 20s leaves room
         // for a slow network fallback (item not yet downloaded) without letting a
@@ -966,6 +1173,18 @@ class PlaybackEngine(private val context: Context) {
         isWaitingForContent = false
         cancelAdvanceTimer()
         cancelErrorReload()
+        // A debounced trailing kick outlives this stop() unless cancelled here: while
+        // the engine waits for content the activity's 5s download poll queues one
+        // roughly half the time, so a kiosk exit / service shutdown landed inside that
+        // window would fire startLoopNow() on a stopped engine up to 10s later. With
+        // views detached it takes renderItem's null-view branch and self-perpetuates
+        // through scheduleAdvanceTimer, emitting full-duration COMPLETE proof-of-play
+        // for content nothing is displaying (advertiser-billed) and keeping
+        // playbackAliveAt fresh — which is exactly the signal ops relies on to see a
+        // screen that stopped playing.
+        pendingLoopKick?.let { mainHandler.removeCallbacks(it) }
+        pendingLoopKick = null
+        cancelFrozenGlassWatchdog()
         retryRunnable?.let { mainHandler.removeCallbacks(it) }
         retryRunnable = null
         countdownRunnable?.let { mainHandler.removeCallbacks(it) }
