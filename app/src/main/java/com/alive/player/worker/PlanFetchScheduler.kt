@@ -29,6 +29,25 @@ object PlanFetchScheduler {
         )
     }
 
+    /**
+     * Fetch now, but yield to a fetch that is already queued or running.
+     *
+     * For callers that poll on a timer rather than reacting to a one-off event:
+     * [scheduleImmediate]'s REPLACE would cancel an in-flight fetch every time it
+     * fired, so a screen polling faster than a fetch completes could keep
+     * restarting one and never finish it. KEEP coalesces instead — a tick that
+     * lands while a fetch is pending is simply a no-op.
+     */
+    fun schedulePollIfIdle(context: Context) {
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            IMMEDIATE_WORK_NAME,
+            ExistingWorkPolicy.KEEP,
+            OneTimeWorkRequestBuilder<PlanFetchWorker>()
+                .setConstraints(networkConstraint)
+                .build(),
+        )
+    }
+
     /** Call once after pairing to start the 15-minute polling cadence. */
     fun schedule(context: Context) {
         val periodic = PeriodicWorkRequestBuilder<PlanFetchWorker>(15, TimeUnit.MINUTES)
