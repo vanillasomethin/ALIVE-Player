@@ -218,6 +218,15 @@ class PlaybackActivity : Activity() {
             eng.onPlaying = {
                 waitingOverlay.visibility = View.GONE
             }
+            // Frame delivery has stalled while video is playing (wedged surface — see
+            // PlaybackEngine's frozen-glass watchdog). Rebuilding this activity gives
+            // the engine a brand-new TextureView, which is the wedged component; the
+            // service, engine and playlist position are untouched because they live in
+            // the foreground service. onServiceConnected re-attaches the fresh views.
+            eng.onGlassWedged = {
+                android.util.Log.w("PlaybackActivity", "Frozen glass reported by engine — recreating playback views")
+                recreate()
+            }
 
             // The engine outlives this activity (it belongs to the foreground service) and
             // may already be mid-loop when we bind — an install/relaunch rebinds after
@@ -665,6 +674,10 @@ class PlaybackActivity : Activity() {
     override fun onDestroy() {
         engine?.onWaiting = null
         engine?.onPlaying = null
+        // Cleared here as well as the other callbacks: a stale recreate() lambda held by
+        // the service-owned engine would target a destroyed activity, and during a
+        // recreate the incoming instance re-registers its own.
+        engine?.onGlassWedged = null
         engine?.detachViews()
         if (bound) {
             unbindService(connection)
