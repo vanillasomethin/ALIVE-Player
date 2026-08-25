@@ -8,7 +8,30 @@ import java.nio.charset.StandardCharsets
 
 /** Non-2xx HTTP response. Carries the status code so callers can distinguish
  *  payload rejections (4xx) from transient server/network trouble (5xx). */
-class ApiHttpException(val code: Int, message: String) : Exception(message)
+class ApiHttpException(val code: Int, message: String, val body: String? = null) : Exception(message) {
+
+    /**
+     * True only for a 410 whose body carries the studio's own decommission marker
+     * ("error":"Device deleted" — the plan/update-check bodies and the events
+     * envelope all embed it). The status code alone is NOT proof the API
+     * pronounced this device dead: the studio is fronted by Vercel, which answers
+     * bare platform-level 410s (DEPLOYMENT_DELETED / DEPLOYMENT_DISABLED) when a
+     * deployment is deleted or a domain is misrouted — wiping on those would
+     * factory-unpair every screen in the field over an infra hiccup. Bare 410s
+     * must be treated as transient like any other server error.
+     */
+    val isDecommission: Boolean
+        get() = code == 410 && body != null && DECOMMISSION_MARKER.containsMatchIn(body)
+
+    companion object {
+        private val DECOMMISSION_MARKER = Regex("\"error\"\\s*:\\s*\"Device deleted\"")
+
+        /** Bodies are kept only for the marker check + diagnostics; a captive
+         *  portal's error page can be arbitrarily large, the marker sits in the
+         *  first 200 bytes of every real studio response. */
+        const val MAX_ERROR_BODY_CHARS = 4096
+    }
+}
 
 class DeviceApiProvider(
     private val baseUrl: String = com.alive.player.BuildConfig.API_BASE_URL,
@@ -41,7 +64,7 @@ class DeviceApiProvider(
         val code = conn.responseCode
         val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
             ?.bufferedReader()?.readText().orEmpty()
-        if (code !in 200..299) throw ApiHttpException(code, "GET $path failed ($code): $body")
+        if (code !in 200..299) throw ApiHttpException(code, "GET $path failed ($code): $body", body.take(ApiHttpException.MAX_ERROR_BODY_CHARS))
         return if (body.isBlank()) JSONObject() else JSONObject(body)
     }
 
@@ -58,7 +81,7 @@ class DeviceApiProvider(
             val code = conn.responseCode
             if (code !in 200..299) {
                 val err = conn.errorStream?.bufferedReader()?.readText().orEmpty()
-                throw ApiHttpException(code, "fetchPlan failed ($code): $err")
+                throw ApiHttpException(code, "fetchPlan failed ($code): $err", err.take(ApiHttpException.MAX_ERROR_BODY_CHARS))
             }
             val body = conn.inputStream.bufferedReader().readText()
             val root = JSONObject(body)
@@ -171,6 +194,16 @@ class DeviceApiProvider(
             .put("appVersion", com.alive.player.BuildConfig.VERSION_NAME)
             .put("androidVersion", android.os.Build.VERSION.RELEASE ?: "")
         if (freeStorageMb != null) telemetry.put("freeStorageMb", freeStorageMb)
+        // Outage forensics. When a screen goes dark, plays and heartbeats stop together
+        // whether the power was cut, the network dropped, or the player exited — the
+        // server cannot tell those apart, so answering "did it lose power?" has meant
+        // sending someone to the site. Uptime settles it on the first heartbeat after
+        // recovery: a boot inside the outage window means power was lost, an uptime
+        // spanning the window means the device stayed on and something else broke.
+        // elapsedRealtime counts deep sleep, so it is true time-since-boot rather than
+        // awake time, and needs no permission. The server stores the derived boot
+        // instant (Device.bootedAt) — a stored uptime would be stale on arrival.
+        telemetry.put("uptimeMs", android.os.SystemClock.elapsedRealtime())
         // Freeze diagnostics: a frozen screen still heartbeats, so lastSeen alone can't
         // detect it. playbackAliveMs is the last time content actually advanced.
         if (playbackAliveMs != null && playbackAliveMs > 0) telemetry.put("playbackAliveMs", playbackAliveMs)
@@ -223,7 +256,7 @@ class DeviceApiProvider(
         val code = conn.responseCode
         val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
             ?.bufferedReader()?.readText().orEmpty()
-        if (code !in 200..299) throw ApiHttpException(code, "POST $path failed ($code): $body")
+        if (code !in 200..299) throw ApiHttpException(code, "POST $path failed ($code): $body", body.take(ApiHttpException.MAX_ERROR_BODY_CHARS))
         return if (body.isBlank()) JSONObject() else JSONObject(body)
     }
 }

@@ -5,6 +5,7 @@ import android.provider.Settings
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.alive.player.data.AppDatabase
+import com.alive.player.data.DeviceDecommissioner
 import com.alive.player.network.ApiHttpException
 import com.alive.player.network.DeviceApiProvider
 import com.alive.player.network.IncidentPayload
@@ -38,6 +39,14 @@ class HeartbeatWorker(
             try {
                 heartbeat(token)
             } catch (ex: ApiHttpException) {
+                // Marker-carrying 410 = this screen was deleted in the admin panel —
+                // decommission rather than re-claim, which would resurrect it as a new
+                // device. A bare 410 (no marker) is infra noise, not a deletion — see
+                // ApiHttpException.isDecommission — and falls through to normal retry.
+                if (ex.isDecommission) {
+                    DeviceDecommissioner.wipe(applicationContext, "heartbeat returned 410 — deleted in admin panel")
+                    return Result.success()
+                }
                 // See PopUploadWorker.reclaimToken — 401/403 means the token was rotated
                 // (e.g. admin re-paired this device), so re-claim and retry once.
                 if (ex.code == 401 || ex.code == 403) {
@@ -47,6 +56,28 @@ class HeartbeatWorker(
                 }
             }
             if (pending.isNotEmpty()) incidentDao.deleteByIds(pending.map { it.id })
+            // FCM token self-heal: onNewToken's one-shot upload misses whenever it
+            // fires before pairing (every fresh sideload) or the network drops it,
+            // leaving the server pushing plan_updated at a token this device no
+            // longer holds — updates then crawl in on the 15-min poll instead of
+            // arriving in seconds. Compare issued vs server-acknowledged here and
+            // re-upload on drift; runs after a successful heartbeat so pairing and
+            // connectivity are known-good. Failure is silent — next run retries.
+            runCatching {
+                // A wiped-then-re-paired install has no stored token and FCM will not
+                // re-fire onNewToken for it (the registration didn't rotate) — ask the
+                // SDK directly so re-commissioned devices regain targeted push too.
+                val issued = prefs.getFcmToken() ?: runCatching {
+                    com.google.android.gms.tasks.Tasks.await(
+                        com.google.firebase.messaging.FirebaseMessaging.getInstance().token,
+                        10, java.util.concurrent.TimeUnit.SECONDS,
+                    )?.also { prefs.setFcmToken(it) }
+                }.getOrNull()
+                if (issued != null && issued != prefs.getUploadedFcmToken()) {
+                    DeviceApiProvider().updateFcmToken(prefs.getDeviceToken() ?: return@runCatching, issued)
+                    prefs.setUploadedFcmToken(issued)
+                }
+            }
             Result.success()
         } catch (ex: Exception) {
             Result.retry()

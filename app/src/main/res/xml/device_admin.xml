@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     No special device-admin policies are required — device owner status alone
-    grants the persistent-preferred-activity (HOME claim) and silent-install
-    APIs used by OwnerSetup.kt and UpdateCheckWorker.kt.
+    grants the persistent-preferred-activity (HOME claim), the silent-install
+    APIs and setTime()/setAutoTimeEnabled() used by OwnerSetup.kt,
+    UpdateCheckWorker.kt and NtpSyncManager.kt.
 -->
 <device-admin xmlns:android="http://schemas.android.com/apk/res/android" />

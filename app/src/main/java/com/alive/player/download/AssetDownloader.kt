@@ -135,6 +135,36 @@ class AssetDownloader(private val context: Context) {
         }
     }
 
+    /**
+     * Delete every cached asset whose contentId is not in [keepContentIds] (the current
+     * plan's items + fallback). Replaced content leaves disk the moment a plan update
+     * lands instead of lingering until evictLru's 2 GB ceiling.
+     *
+     * Safety properties:
+     *  - Anything in the current plan is kept whether or not its own download has
+     *    finished, so a mid-update prune can never eat a file the new loop needs.
+     *  - A removed item that is still rendering keeps playing to the end of the clip —
+     *    ExoPlayer holds an open descriptor and unlink doesn't revoke it. It can't come
+     *    around again because the new loop no longer contains it.
+     *  - Directory sweep only removes content dirs with NO surviving DB row, catching
+     *    files orphaned by an H.264↔HEVC rendition switch (same contentId dir keeps its
+     *    row and is left alone) or by an interrupted pre-atomic-rename session.
+     */
+    suspend fun pruneStale(keepContentIds: Set<String>) = withContext(Dispatchers.IO) {
+        val db = AppDatabase.get(context)
+        for (asset in db.assetDao().allByLru()) {
+            if (asset.contentId in keepContentIds) continue
+            runCatching { File(asset.path).delete() }
+            db.assetDao().delete(asset.contentId, asset.version)
+        }
+        val assetsRoot = File(context.getExternalFilesDir("cache") ?: context.cacheDir, "assets")
+        assetsRoot.listFiles()?.forEach { dir ->
+            if (dir.isDirectory && dir.name !in keepContentIds) {
+                runCatching { dir.deleteRecursively() }
+            }
+        }
+    }
+
     companion object {
         fun cachedFileFor(context: Context, contentId: String, version: String, sha256: String, ext: String): File {
             val cacheRoot = context.getExternalFilesDir("cache") ?: context.cacheDir

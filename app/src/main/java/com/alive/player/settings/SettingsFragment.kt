@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.app.Fragment
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
@@ -13,9 +14,12 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import com.alive.player.BuildConfig
 import com.alive.player.R
 import com.alive.player.data.AppDatabase
+import com.alive.player.data.DeviceDecommissioner
 import com.alive.player.ui.PairingActivity
+import com.alive.player.worker.UpdateScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -41,6 +45,21 @@ class SettingsFragment : Fragment() {
 
         view.findViewById<Button>(R.id.reset_button).setOnClickListener { confirmReset() }
         view.findViewById<Button>(R.id.clear_cache_button).setOnClickListener { confirmClearCache() }
+
+        // Operator servicing: jump to Android Wi-Fi / system settings without leaving the
+        // kiosk (change network, check for device updates). NEW_TASK so it launches cleanly
+        // from here; fall back to the top-level Settings if the specific screen is absent on
+        // this OEM build. These packages are on the Device-Owner lock-task allowlist
+        // (OwnerSetup), so they open even while playback is pinned. BACK returns to playback.
+        view.findViewById<Button>(R.id.btn_wifi_settings).setOnClickListener {
+            runCatching { activity?.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                .onFailure { runCatching { activity?.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
+        }
+        view.findViewById<Button>(R.id.btn_android_settings).setOnClickListener {
+            runCatching { activity?.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        }
+
+        bindUpdateRow(view)
 
         val btnPortrait = view.findViewById<Button>(R.id.btn_orientation_portrait)
         val btnReverse  = view.findViewById<Button>(R.id.btn_orientation_reverse)
@@ -83,6 +102,49 @@ class SettingsFragment : Fragment() {
         }
 
         return view
+    }
+
+    // Re-bind on every return to the foreground: an update may have finished
+    // downloading (or been installed) while this screen was covered.
+    override fun onResume() {
+        super.onResume()
+        view?.let { bindUpdateRow(it) }
+    }
+
+    /**
+     * Shows the "App update" row only when UpdateCheckWorker has recorded a newer,
+     * hash-verified APK. Pressing Install commits the PackageInstaller session while
+     * this screen holds UpdateGate open, so the system confirm dialog appears to the
+     * operator standing here — the one moment it is allowed to appear at all.
+     */
+    private fun bindUpdateRow(view: View) {
+        val ctx = activity.applicationContext
+        val prefs = DevicePrefs(ctx)
+        val row = view.findViewById<View>(R.id.row_app_update)
+
+        val readyVc = prefs.getUpdateReadyVersionCode()
+        if (readyVc <= BuildConfig.VERSION_CODE) {
+            row.visibility = View.GONE
+            return
+        }
+
+        row.visibility = View.VISIBLE
+        val name = prefs.getUpdateReadyVersionName() ?: "1.0.$readyVc"
+        view.findViewById<TextView>(R.id.tv_update_status).text = "Version $name ready to install"
+        val installBtn = view.findViewById<Button>(R.id.btn_install_update)
+        installBtn.isEnabled = true
+        installBtn.setOnClickListener {
+            // Deliberately NOT committing the cached APK directly: the one-shot worker
+            // revalidates against the server first (a rolled-back build must not be
+            // installable from stale local state), reuses the SHA-verified cached APK
+            // when still current, and — because UpdateGate is open on this screen —
+            // commits at the end, so the confirm dialog appears right here.
+            // Disabled until onResume rebinds (returning from the dialog), so a double
+            // press can't race two checks; the worker also serializes via its mutex.
+            installBtn.isEnabled = false
+            Toast.makeText(activity, "Preparing update…", Toast.LENGTH_SHORT).show()
+            UpdateScheduler.checkNow(ctx)
+        }
     }
 
     private fun getNetworkStatus(ctx: Context): String {
@@ -130,23 +192,13 @@ class SettingsFragment : Fragment() {
     }
 
     private fun performReset() {
+        val ctx = activity.applicationContext
         CoroutineScope(Dispatchers.IO).launch {
-            val ctx = activity.applicationContext
-            val db = AppDatabase.get(ctx)
-            db.planCacheDao().clear()
-            db.proofEventDao().clearAll()
-            db.assetDao().clearAll()
-            db.downloadJobDao().clearAll()
-            db.incidentDao().clearAll()
-            ctx.getExternalFilesDir("cache")?.deleteRecursively()
-            ctx.cacheDir.deleteRecursively()
-            DevicePrefs(ctx).clearAll()
-            withContext(Dispatchers.Main) {
-                val intent = Intent(ctx, PairingActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                }
-                ctx.startActivity(intent)
-            }
+            // Same wipe the server-triggered decommission uses (410 / FCM push), so
+            // manual reset and remote deletion cannot drift apart. It also cancels
+            // the periodic workers and stops playback before clearing, then brings
+            // up PairingActivity itself.
+            DeviceDecommissioner.wipe(ctx, "operator reset from Settings")
         }
     }
 

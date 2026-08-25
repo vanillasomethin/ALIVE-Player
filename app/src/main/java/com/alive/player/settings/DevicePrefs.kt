@@ -35,6 +35,7 @@ class DevicePrefs(private val context: Context) {
             .putLong(KEY_PAIRED_AT, System.currentTimeMillis())
             .remove(KEY_PAIRING_CODE)    // no longer needed once confirmed
             .apply()
+        invalidateUploadedFcmToken()
     }
 
     /**
@@ -46,8 +47,18 @@ class DevicePrefs(private val context: Context) {
             .putString(KEY_DEVICE_TOKEN, token)
             .putString(KEY_DEVICE_ID, deviceId)
             .putString(KEY_PAIRING_CODE, pairingCode)
-            // KEY_PAIRED_AT intentionally not set
+            // Pending means NOT confirmed — a paired_at left over from a previous
+            // pairing must not survive, or isPaired() would report a pending device
+            // as confirmed and keep playing a dead identity's cached plan.
+            .remove(KEY_PAIRED_AT)
             .apply()
+        invalidateUploadedFcmToken()
+    }
+
+    /** Any pairing-identity change may mean a fresh server row that has never seen
+     *  our FCM token — forget the ack so the next heartbeat re-uploads exactly once. */
+    private fun invalidateUploadedFcmToken() {
+        statusPrefs.edit().remove(KEY_FCM_TOKEN_UPLOADED).apply()
     }
 
     /** Marks the device as admin-confirmed so [isPaired] returns true. */
@@ -108,11 +119,29 @@ class DevicePrefs(private val context: Context) {
 
     fun getFcmToken(): String? = statusPrefs.getString(KEY_FCM_TOKEN, null)
 
+    /**
+     * The token the SERVER last acknowledged, as opposed to the one FCM last issued
+     * ([setFcmToken]). onNewToken's one-shot upload is lossy — it fires before pairing
+     * on a fresh install and swallows network failures — so HeartbeatWorker compares
+     * these two and re-uploads whenever they differ. Until they match, targeted pushes
+     * (plan_updated, decommission) go to a token the device no longer holds.
+     */
+    fun setUploadedFcmToken(token: String) {
+        statusPrefs.edit().putString(KEY_FCM_TOKEN_UPLOADED, token).apply()
+    }
+
+    fun getUploadedFcmToken(): String? = statusPrefs.getString(KEY_FCM_TOKEN_UPLOADED, null)
+
     fun setClockOffsetMs(offsetMs: Long) {
         statusPrefs.edit().putLong(KEY_CLOCK_OFFSET_MS, offsetMs).apply()
     }
 
     fun getClockOffsetMs(): Long = statusPrefs.getLong(KEY_CLOCK_OFFSET_MS, 0L)
+
+    /** When NTP last answered. Throttles re-syncs; see NtpSyncManager.syncIfNeeded. */
+    fun setLastNtpSyncMs(ms: Long) { statusPrefs.edit().putLong(KEY_LAST_NTP_SYNC_MS, ms).apply() }
+
+    fun getLastNtpSyncMs(): Long = statusPrefs.getLong(KEY_LAST_NTP_SYNC_MS, 0L)
 
     // ── Remote-configurable player behavior (server-driven, no APK rebuild needed) ──
 
@@ -136,6 +165,57 @@ class DevicePrefs(private val context: Context) {
      *  isn't part of planHash and a notModified poll wouldn't refresh it otherwise. */
     fun setSoundAdMuted(muted: Boolean) { statusPrefs.edit().putBoolean(KEY_SOUND_AD_MUTED, muted).apply() }
     fun getSoundAdMuted(): Boolean = statusPrefs.getBoolean(KEY_SOUND_AD_MUTED, false)
+
+    // ── OTA update state ───────────────────────────────────────────────────────────
+    // A newer APK has been downloaded and verified; it is waiting either for a silent
+    // install (device owner / self-installer-of-record) or for an operator to press
+    // "Install update" in Settings. Deliberately in plain statusPrefs — nothing secret.
+
+    /** Records a downloaded, hash-verified update. A NEW versionCode resets the
+     *  needs-user-action flag: a fresh APK may install silently even if the last one
+     *  couldn't (e.g. after the first manual update made us installer-of-record). */
+    fun setUpdateReady(versionCode: Int, versionName: String?, apkPath: String) {
+        val editor = statusPrefs.edit()
+            .putInt(KEY_UPDATE_READY_VC, versionCode)
+            .putString(KEY_UPDATE_READY_NAME, versionName)
+            .putString(KEY_UPDATE_READY_APK, apkPath)
+        if (statusPrefs.getInt(KEY_UPDATE_READY_VC, -1) != versionCode) {
+            editor.remove(KEY_UPDATE_NEEDS_USER)
+        }
+        editor.apply()
+    }
+
+    fun getUpdateReadyVersionCode(): Int = statusPrefs.getInt(KEY_UPDATE_READY_VC, -1)
+    fun getUpdateReadyVersionName(): String? = statusPrefs.getString(KEY_UPDATE_READY_NAME, null)
+    fun getUpdateReadyApkPath(): String? = statusPrefs.getString(KEY_UPDATE_READY_APK, null)
+
+    /** The one PackageInstaller session whose status broadcasts we act on. Persisted
+     *  before commit so a status arriving after process death still matches. Statuses
+     *  from any other session (e.g. ABORTED fired by our own stale-session cleanup in
+     *  UpdateInstaller.commit) must be ignored, not misread as an operator cancel. */
+    fun setPendingInstallSessionId(sessionId: Int) {
+        statusPrefs.edit().putInt(KEY_UPDATE_SESSION_ID, sessionId).apply()
+    }
+
+    fun getPendingInstallSessionId(): Int = statusPrefs.getInt(KEY_UPDATE_SESSION_ID, -1)
+
+    /** Set when a commit came back PENDING_USER_ACTION (or the operator cancelled the
+     *  dialog) — tells the worker to stop re-committing and leave it to Settings. */
+    fun markUpdateNeedsUserAction() {
+        statusPrefs.edit().putBoolean(KEY_UPDATE_NEEDS_USER, true).apply()
+    }
+
+    fun updateNeedsUserAction(): Boolean = statusPrefs.getBoolean(KEY_UPDATE_NEEDS_USER, false)
+
+    fun clearUpdateReady() {
+        statusPrefs.edit()
+            .remove(KEY_UPDATE_READY_VC)
+            .remove(KEY_UPDATE_READY_NAME)
+            .remove(KEY_UPDATE_READY_APK)
+            .remove(KEY_UPDATE_NEEDS_USER)
+            .remove(KEY_UPDATE_SESSION_ID)
+            .apply()
+    }
 
     // ── Diagnostics ────────────────────────────────────────────────────────────────
 
@@ -201,13 +281,21 @@ class DevicePrefs(private val context: Context) {
         private const val KEY_PLAN_UPDATED_MS = "plan_updated_ms"
         private const val KEY_ORIENTATION     = "orientation_mode"
         private const val KEY_FCM_TOKEN       = "fcm_token"
+        private const val KEY_FCM_TOKEN_UPLOADED = "fcm_token_uploaded"
         private const val KEY_CLOCK_OFFSET_MS = "clock_offset_ms"
+        private const val KEY_LAST_NTP_SYNC_MS = "last_ntp_sync_ms"
         private const val KEY_RETRY_INTERVAL_MS      = "cfg_retry_interval_ms"
         private const val KEY_TRANSITION_DURATION_MS = "cfg_transition_duration_ms"
         private const val KEY_KIOSK_KEY_LOCK         = "cfg_kiosk_key_lock"
         private const val KEY_DL_CONNECT_TIMEOUT_MS  = "cfg_dl_connect_timeout_ms"
         private const val KEY_DL_READ_TIMEOUT_MS     = "cfg_dl_read_timeout_ms"
         private const val KEY_SOUND_AD_MUTED         = "cfg_sound_ad_muted"
+
+        private const val KEY_UPDATE_READY_VC        = "update_ready_version_code"
+        private const val KEY_UPDATE_READY_NAME      = "update_ready_version_name"
+        private const val KEY_UPDATE_READY_APK       = "update_ready_apk_path"
+        private const val KEY_UPDATE_NEEDS_USER      = "update_needs_user_action"
+        private const val KEY_UPDATE_SESSION_ID      = "update_install_session_id"
         private const val KEY_LAST_STALL             = "diag_last_stall"
         private const val KEY_LAST_STALL_MS          = "diag_last_stall_ms"
         private const val KEY_PLAYBACK_ALIVE_MS      = "diag_playback_alive_ms"

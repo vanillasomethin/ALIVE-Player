@@ -14,6 +14,7 @@ import androidx.work.workDataOf
 import com.alive.player.data.AppDatabase
 import com.alive.player.data.DownloadJob
 import com.alive.player.download.AssetDownloader
+import com.alive.player.playback.PlanLoader
 
 class DownloadWorker(
     appContext: Context,
@@ -49,6 +50,18 @@ class DownloadWorker(
         return if (file != null) {
             db.downloadJobDao().update(assetKey, "DONE", file.length(), null)
             downloader.evictLru()
+            // Content-update cleanup policy: replaced videos are purged from disk as
+            // soon as a plan update lands, not deferred to the 2 GB LRU ceiling. This
+            // runs on every successful pass (a plan change enqueues a DownloadWorker
+            // per item, cache hits included), so the keep-set is always the plan that
+            // scheduled this download. Empty keep-set is skipped: a transiently
+            // empty/unparseable plan must not wipe the whole cache.
+            PlanLoader.load(applicationContext)?.let { plan ->
+                val keep = (plan.windows.flatMap { it.items } + plan.fallbackItems)
+                    .map { it.contentVersionId }
+                    .toSet()
+                if (keep.isNotEmpty()) downloader.pruneStale(keep)
+            }
             Result.success()
         } else {
             db.downloadJobDao().update(assetKey, "FAILED", 0L, "download failed or sha256 mismatch")

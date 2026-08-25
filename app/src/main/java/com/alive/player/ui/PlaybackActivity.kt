@@ -64,6 +64,7 @@ class PlaybackActivity : Activity() {
     private var bound = false
 
     private lateinit var playerView: PlayerView
+    private lateinit var playerViewB: PlayerView
     private lateinit var imageView: ImageView
     private lateinit var webView: WebView
     private lateinit var contentRotator: FrameLayout
@@ -188,7 +189,13 @@ class PlaybackActivity : Activity() {
                         lastPollBytesMs = 0L
                         lastPollBytes   = 0L
                         downloadCorner.visibility = View.GONE
-                        if (waitingOverlay.visibility == View.VISIBLE) {
+                        // Kick on the ENGINE's state, never this activity's overlay view:
+                        // onWaiting/onPlaying are single vars on the shared service engine,
+                        // so an activity that is no longer the newest-bound one has a
+                        // frozen overlay — judging by it, a buried instance called
+                        // startLoop() every 5s forever (fleet-wide item-0 replay,
+                        // 2026-08-14). The engine always knows whether it's really idle.
+                        if (engine?.isWaitingForContent == true) {
                             engine?.startLoop()
                         }
                     }
@@ -211,8 +218,25 @@ class PlaybackActivity : Activity() {
             eng.onPlaying = {
                 waitingOverlay.visibility = View.GONE
             }
+            // Frame delivery has stalled while video is playing (wedged surface — see
+            // PlaybackEngine's frozen-glass watchdog). Rebuilding this activity gives
+            // the engine a brand-new TextureView, which is the wedged component; the
+            // service, engine and playlist position are untouched because they live in
+            // the foreground service. onServiceConnected re-attaches the fresh views.
+            eng.onGlassWedged = {
+                android.util.Log.w("PlaybackActivity", "Frozen glass reported by engine — recreating playback views")
+                recreate()
+            }
 
-            eng.attachViews(playerView, imageView, webView)
+            // The engine outlives this activity (it belongs to the foreground service) and
+            // may already be mid-loop when we bind — an install/relaunch rebinds after
+            // playback resumed, so onPlaying fired before these handlers existed and will
+            // not fire again until the next startLoop(). Sync the overlay to the engine's
+            // actual state or it stays up (layout default VISIBLE) over healthy playback.
+            waitingOverlay.visibility =
+                if (eng.isWaitingForContent) View.VISIBLE else View.GONE
+
+            eng.attachViews(playerView, playerViewB, imageView, webView)
             bound = true
         }
 
@@ -228,6 +252,7 @@ class PlaybackActivity : Activity() {
         setContentView(R.layout.activity_playback)
 
         playerView        = findViewById(R.id.player_view)
+        playerViewB       = findViewById(R.id.player_view_b)
         imageView         = findViewById(R.id.image_view)
         webView           = findViewById(R.id.web_view)
         contentRotator    = findViewById(R.id.content_rotator)
@@ -301,9 +326,7 @@ class PlaybackActivity : Activity() {
             ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
         setNetworkState(isOnline)
 
-        // ── Start polls ───────────────────────────────────────────────────
-        uiHandler.post(planPollRunnable)
-        uiHandler.post(downloadPollRunnable)
+        // Polls start in onStart, not here — see onStart/onStop.
 
         // Resume full kiosk whenever playback is (re)opened — this is what makes the
         // 5×-BACK exit "temporary": launching from the apps menu re-claims HOME and
@@ -314,6 +337,60 @@ class PlaybackActivity : Activity() {
         val serviceIntent = Intent(this, PlaybackForegroundService::class.java)
         startForegroundService(serviceIntent)
         bindService(serviceIntent, connection, BIND_AUTO_CREATE)
+    }
+
+    /**
+     * The pollers live between onStart and onStop, NOT onCreate→onDestroy: a
+     * backgrounded-but-alive instance (Settings on top, or a second instance stacked by
+     * a relaunch before launchMode="singleTask" existed) must not keep polling — its
+     * views no longer track the shared engine (see downloadPollRunnable), so its polls
+     * act on stale state. Three such instances, each kicking engine.startLoop() every
+     * 5s, were the fleet-wide "first 5s of item 0 on repeat" outage of 2026-08-14.
+     */
+    override fun onStart() {
+        super.onStart()
+        uiHandler.post(planPollRunnable)
+        uiHandler.post(downloadPollRunnable)
+    }
+
+    override fun onStop() {
+        // Only the pollers — a blanket removeCallbacksAndMessages would also kill
+        // unrelated one-shots (banner auto-hide, retry re-enable) mid-flight.
+        uiHandler.removeCallbacks(planPollRunnable)
+        uiHandler.removeCallbacks(downloadPollRunnable)
+        super.onStop()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        enterLockTaskIfOwner()
+    }
+
+    // singleTask relaunch (launcher icon, Pairing forward, OTA relaunch) lands here on
+    // the existing instance instead of stacking a new one. Re-assert the kiosk guards
+    // exactly like a fresh onCreate would — reopening the app is the documented way to
+    // undo the 5×BACK kiosk exit, and that must keep working when the instance is reused.
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        resumeKioskGuards()
+    }
+
+    /**
+     * Lock-task (kiosk pinning) — Device-Owner installs only. Pins this task so
+     * HOME/RECENTS can't leave it, with no consent toast (the package is allowlisted
+     * by OwnerSetup.setLockTaskPackages, which resumeKioskGuards has already run by
+     * the time onResume fires). No-op on non-owner installs. exitKiosk() unpins, so
+     * the 5×BACK escape and the in-app Settings buttons (allowlisted packages) keep
+     * working. Note: at least one Google-TV OEM build does not resume lock task
+     * across a reboot — there this pins at runtime but boot still shows the OEM
+     * launcher briefly until BootReceiver relaunches playback.
+     */
+    private fun enterLockTaskIfOwner() {
+        if (!OwnerSetup.isDeviceOwner(this)) return
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager ?: return
+        if (am.lockTaskModeState == android.app.ActivityManager.LOCK_TASK_MODE_NONE) {
+            runCatching { startLockTask() }
+        }
     }
 
     /** Re-assert the HOME claim + periodic workers. Idempotent; reverses exitKiosk(). */
@@ -597,6 +674,10 @@ class PlaybackActivity : Activity() {
     override fun onDestroy() {
         engine?.onWaiting = null
         engine?.onPlaying = null
+        // Cleared here as well as the other callbacks: a stale recreate() lambda held by
+        // the service-owned engine would target a destroyed activity, and during a
+        // recreate the incoming instance re-registers its own.
+        engine?.onGlassWedged = null
         engine?.detachViews()
         if (bound) {
             unbindService(connection)
@@ -654,6 +735,29 @@ class PlaybackActivity : Activity() {
                     // can be, so it's safe to always open Settings rather than requiring the
                     // triple-select gesture.
                     startActivity(Intent(this, SettingsActivity::class.java))
+                    return true
+                }
+                KeyEvent.KEYCODE_VOLUME_UP,
+                KeyEvent.KEYCODE_VOLUME_DOWN,
+                KeyEvent.KEYCODE_VOLUME_MUTE -> {
+                    // Handle volume explicitly rather than trusting the fall-through:
+                    // some OEM builds route volume through their launcher, and lock-task
+                    // mode can suppress the system volume handling entirely — either way
+                    // the operator's volume buttons must always work during playback.
+                    // Auto-repeats deliberately count here (holding = keep adjusting).
+                    val am = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+                    val dir = when (event.keyCode) {
+                        KeyEvent.KEYCODE_VOLUME_UP   -> android.media.AudioManager.ADJUST_RAISE
+                        KeyEvent.KEYCODE_VOLUME_DOWN -> android.media.AudioManager.ADJUST_LOWER
+                        else                         -> android.media.AudioManager.ADJUST_TOGGLE_MUTE
+                    }
+                    runCatching {
+                        am.adjustStreamVolume(
+                            android.media.AudioManager.STREAM_MUSIC,
+                            dir,
+                            android.media.AudioManager.FLAG_SHOW_UI,
+                        )
+                    }
                     return true
                 }
                 KeyEvent.KEYCODE_BACK -> {
@@ -728,6 +832,9 @@ class PlaybackActivity : Activity() {
      * resumeKioskGuards() and a reboot re-runs BootReceiver, both of which restore kiosk.
      */
     private fun exitKiosk() {
+        // 0. Unpin first: while lock-task is active the HOME launch below would be
+        //    blocked and the screen would stay pinned to this task.
+        runCatching { stopLockTask() }
         // 1. Relinquish the persistent HOME claim (device-owner only; no-op otherwise).
         runCatching {
             if (OwnerSetup.isDeviceOwner(this)) {

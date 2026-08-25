@@ -1,30 +1,34 @@
 package com.alive.player.worker
 
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageInstaller
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.os.Build
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.alive.player.BuildConfig
-import com.alive.player.admin.OwnerSetup
+import com.alive.player.data.DeviceDecommissioner
 import com.alive.player.download.AssetDownloader
+import com.alive.player.network.ApiHttpException
 import com.alive.player.network.DeviceApiProvider
 import com.alive.player.settings.DevicePrefs
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileInputStream
 
 /**
  * Checks /api/device/update-check, downloads a newer APK via the existing
- * AssetDownloader (range-resume + SHA-256 verify, already hardened for media
- * assets and generic enough to reuse here unchanged), and installs it via
- * PackageInstaller. Fully silent only when device-owner + API 31+; otherwise
- * falls back to the standard system install-confirm dialog (UpdateInstallReceiver).
+ * AssetDownloader (range-resume + SHA-256 verify, already hardened for media assets),
+ * records it as "update ready", and installs it via UpdateInstaller — but ONLY when
+ * the install can complete without disturbing playback:
+ *
+ *  - Silent-capable device (owner / self-installer-of-record on 12+): commit now,
+ *    the update applies itself; PackageReplacedReceiver brings playback back up.
+ *  - Otherwise: no commit from here. The Settings screen shows "Install update"
+ *    (SettingsFragment) and the operator triggers the one confirm dialog in person.
+ *
+ * This is what stops the old behaviour of re-prompting the install dialog over
+ * kiosk playback on every periodic check, forever, on non-owner devices.
  */
 class UpdateCheckWorker(
     appContext: Context,
@@ -32,54 +36,65 @@ class UpdateCheckWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        if (!isValidatedNetwork(applicationContext)) return@withContext Result.success()
+        // Behind a captive portal (hotel/venue WiFi) the network is CONNECTED but not
+        // VALIDATED — retry with backoff instead of consuming the run doing nothing,
+        // otherwise the Settings button's one-shot would silently no-op forever there.
+        if (!isValidatedNetwork(applicationContext)) return@withContext Result.retry()
 
         val prefs = DevicePrefs(applicationContext)
         val token = prefs.getDeviceToken() ?: return@withContext Result.failure()
 
-        try {
-            val update = DeviceApiProvider().checkForUpdate(token) ?: return@withContext Result.success()
-            if (update.versionCode <= BuildConfig.VERSION_CODE) return@withContext Result.success()
+        // The one-shot (Settings button) and the periodic check may fire together;
+        // both write the same .part staging file. Serialize the whole check.
+        checkMutex.withLock {
+            try {
+                val update = DeviceApiProvider().checkForUpdate(token)
+                if (update == null || update.versionCode <= BuildConfig.VERSION_CODE) {
+                    // Nothing newer than what is running — drop stale ready-state and
+                    // cached APKs (covers "server rolled back" and "just got updated").
+                    prefs.clearUpdateReady()
+                    UpdateInstaller.clearAllUpdates(applicationContext)
+                    return@withLock Result.success()
+                }
 
-            val apk = AssetDownloader(applicationContext).download(
-                contentId = "player-update",
-                version   = update.versionCode.toString(),
-                sha256    = update.sha256,
-                uri       = update.apkUrl,
-                ext       = "apk",
-            ) ?: return@withContext Result.retry()
+                val apk = AssetDownloader(applicationContext).download(
+                    contentId = UpdateInstaller.UPDATE_CONTENT_ID,
+                    version   = update.versionCode.toString(),
+                    sha256    = update.sha256,
+                    uri       = update.apkUrl,
+                    ext       = "apk",
+                ) ?: return@withLock Result.retry()
 
-            installApk(applicationContext, apk)
-            Result.success()
-        } catch (ex: Exception) {
-            if (runAttemptCount < 3) Result.retry() else Result.success()
+                prefs.setUpdateReady(update.versionCode, update.versionName, apk.absolutePath)
+                UpdateInstaller.pruneOldUpdates(applicationContext, keep = apk)
+
+                // Commit only when the install can complete AND the screen comes back:
+                //  - silently on a device that can also relaunch itself afterwards, or
+                //  - with an operator present in Settings (UpdateGate) to see it through.
+                // needsUserAction stops silent-looking devices that already proved
+                // otherwise (a commit came back PENDING) from re-committing 4x/day.
+                val canAuto = UpdateInstaller.canInstallSilently(applicationContext) &&
+                    UpdateInstaller.canRelaunchUiAfterInstall(applicationContext) &&
+                    !prefs.updateNeedsUserAction()
+                if (canAuto || UpdateGate.userActionAllowed) {
+                    UpdateInstaller.commit(applicationContext, apk)
+                }
+                Result.success()
+            } catch (ex: Exception) {
+                // Marker-carrying 410 = deleted in the admin panel; same handling as
+                // every worker (bare infra 410s retry — ApiHttpException.isDecommission).
+                if (ex is ApiHttpException && ex.isDecommission) {
+                    DeviceDecommissioner.wipe(applicationContext, "update check returned 410 — deleted in admin panel")
+                    return@withLock Result.success()
+                }
+                if (runAttemptCount < 3) Result.retry() else Result.success()
+            }
         }
     }
 
-    private fun installApk(context: Context, apk: File) {
-        val installer = context.packageManager.packageInstaller
-        val sessionParams = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-        if (OwnerSetup.isDeviceOwner(context) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            sessionParams.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-        }
-
-        val sessionId = installer.createSession(sessionParams)
-        installer.openSession(sessionId).use { session ->
-            FileInputStream(apk).use { input ->
-                session.openWrite("update", 0, apk.length()).use { output ->
-                    input.copyTo(output)
-                    session.fsync(output)
-                }
-            }
-            val statusIntent = Intent(context, UpdateInstallReceiver::class.java)
-            val pendingIntent = PendingIntent.getBroadcast(
-                context,
-                sessionId,
-                statusIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-            )
-            session.commit(pendingIntent.intentSender)
-        }
+    companion object {
+        /** Process-wide: serializes the one-shot and periodic checks (same process). */
+        private val checkMutex = Mutex()
     }
 
     private fun isValidatedNetwork(context: Context): Boolean {
