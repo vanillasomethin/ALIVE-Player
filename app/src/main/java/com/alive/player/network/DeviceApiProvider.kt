@@ -201,6 +201,21 @@ class DeviceApiProvider(
         // awake time, and needs no permission. The server stores the derived boot
         // instant (Device.bootedAt) — a stored uptime would be stale on arrival.
         telemetry.put("uptimeMs", android.os.SystemClock.elapsedRealtime())
+        // Second half of the same question: uptimeMs says whether the BOX restarted,
+        // this says whether the APP did. Both are needed, because the three outage
+        // causes are only separable together:
+        //   box rebooted                  -> power was cut (or it was restarted)
+        //   box up, app restarted         -> the player died (crash / force-stop)
+        //   box up, app up the whole time -> only the link broke; nothing here failed
+        // Without this the last two are indistinguishable: playbackAliveMs cannot serve
+        // as the discriminator because playback resumes on recovery and refreshes it to
+        // "now" in BOTH cases, so an app that died looks exactly like one that never did.
+        // Process start is measured on the same elapsedRealtime clock as uptimeMs, so the
+        // two are directly comparable; getStartElapsedRealtime is API 24+ (minSdk 26).
+        telemetry.put(
+            "appUptimeMs",
+            android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime(),
+        )
         // Freeze diagnostics: a frozen screen still heartbeats, so lastSeen alone can't
         // detect it. playbackAliveMs is the last time content actually advanced.
         if (playbackAliveMs != null && playbackAliveMs > 0) telemetry.put("playbackAliveMs", playbackAliveMs)
