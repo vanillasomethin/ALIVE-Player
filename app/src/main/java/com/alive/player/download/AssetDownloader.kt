@@ -107,6 +107,21 @@ class AssetDownloader(private val context: Context) {
             return@withContext null
         }
 
+        // The upsert below REPLACEs this (contentId, version)'s single row — version is
+        // always "current", so a hash change (transcode rendition swap, per-screen
+        // full-quality toggle) repoints the row and the previous hash's file becomes
+        // invisible to every DB-driven cleaner: evictLru only walks rows, and pruneStale
+        // keeps this whole dir while the content stays in the plan. Left alone, orphans
+        // pile up until the free-space pre-flight refuses all downloads. Delete the
+        // superseded siblings now, while we still know which file is live — anything
+        // else in this dir is a stale rendition or an abandoned .part of one. unlink is
+        // safe even if a player has the old file open mid-clip: its descriptor keeps the
+        // bytes readable until it closes. This also retroactively reclaims orphans from
+        // earlier flips the next time their content re-downloads.
+        final.parentFile?.listFiles()?.forEach { sibling ->
+            if (sibling.name != final.name) runCatching { sibling.delete() }
+        }
+
         val db = AppDatabase.get(context)
         db.assetDao().upsert(
             Asset(
@@ -185,6 +200,24 @@ class AssetDownloader(private val context: Context) {
             // A zero-length file is still rejected: it can't be valid media, and returning
             // it would make ExoPlayer fail instead of falling through to a re-download.
             return if (file.exists() && file.length() > 0) file else null
+        }
+
+        /**
+         * Newest complete cached file for a content regardless of hash — the
+         * rendition-flip fallback. PlanFetchWorker commits a new plan before its
+         * downloads finish, so for a while the plan names a hash that isn't on disk
+         * yet while the previous rendition still is. An exact-hash miss resolves to
+         * this so the slot keeps playing from disk instead of streaming (stall-prone
+         * on store Wi-Fi) while DownloadWorker catches up. Any non-.part file here
+         * was promoted by the atomic rename after a hash check, so present ⇒
+         * complete — the same invariant getCachedFile trusts.
+         */
+        fun newestCompleteCachedFile(context: Context, contentId: String, version: String): File? {
+            val cacheRoot = context.getExternalFilesDir("cache") ?: context.cacheDir
+            val dir = File(cacheRoot, "assets/$contentId/$version")
+            return dir.listFiles()
+                ?.filter { it.isFile && !it.name.endsWith(".part") && it.length() > 0 }
+                ?.maxByOrNull { it.lastModified() }
         }
 
         /**
