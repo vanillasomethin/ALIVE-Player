@@ -34,6 +34,8 @@ android {
             ?: localProps.getProperty("apiBaseUrl")
             ?: "https://wearealive.in"
         buildConfigField("String", "API_BASE_URL", "\"$apiUrl\"")
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -158,4 +160,8 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // Real org.json for local unit tests — the android.jar stub throws on every call.
     testImplementation("org.json:json:20240303")
+
+    // On-device tests (cache/download behaviour needs the real filesystem + Room).
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 }

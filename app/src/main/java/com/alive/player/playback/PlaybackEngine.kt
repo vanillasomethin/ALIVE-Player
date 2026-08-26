@@ -197,7 +197,13 @@ class PlaybackEngine(private val context: Context) {
     }
 
     private fun mediaItemFor(item: PlanItem, uri: android.net.Uri): MediaItem {
-        val mimeType = when (item.ext?.lowercase()) {
+        // The real container is whatever the resolved uri points at, which during a
+        // rendition-flip fallback can differ from item.ext (e.g. the .mp4 transcode
+        // still on disk while the plan now names a .mov original) — trust the uri's
+        // filename over the plan when it carries an extension.
+        val ext = uri.lastPathSegment?.substringAfterLast('.', "")?.takeIf { it.isNotBlank() }
+            ?: item.ext
+        val mimeType = when (ext?.lowercase()) {
             "mp4"  -> MimeTypes.VIDEO_MP4
             "webm" -> MimeTypes.VIDEO_WEBM
             "mkv"  -> MimeTypes.VIDEO_MATROSKA
@@ -211,13 +217,33 @@ class PlaybackEngine(private val context: Context) {
         }
     }
 
+    // The local file most recently resolved for each content, so a stall/decode-error
+    // eviction targets the file that actually played. During a rendition flip the
+    // fallback below serves the PREVIOUS hash's file; evicting by the item's (new)
+    // hash would miss it and the same corrupt file would come around every loop.
+    // Main-thread only, like the rest of the engine's mutable state.
+    private val resolvedLocalFiles = HashMap<String, java.io.File>()
+
     private fun resolvedUriFor(item: PlanItem): android.net.Uri {
-        val localFile = item.sha256?.let { sha256 ->
+        val exact = item.sha256?.let { sha256 ->
             item.ext?.let { ext ->
                 AssetDownloader.getCachedFile(context, item.contentVersionId, "current", sha256, ext)
             }
         }
-        return if (localFile != null) android.net.Uri.fromFile(localFile) else android.net.Uri.parse(item.uri)
+        // Flip window: PlanFetchWorker commits the new plan before its downloads
+        // finish, so the plan can name a hash that isn't on disk yet while the
+        // previous rendition still is. Play the previous file rather than stream —
+        // store Wi-Fi makes streaming stall-prone, and a black slot still emits
+        // proof-of-play. DownloadWorker swaps the real file in for a later loop.
+        val localFile = exact
+            ?: AssetDownloader.newestCompleteCachedFile(context, item.contentVersionId, "current")
+        return if (localFile != null) {
+            resolvedLocalFiles[item.contentVersionId] = localFile
+            android.net.Uri.fromFile(localFile)
+        } else {
+            resolvedLocalFiles.remove(item.contentVersionId)
+            android.net.Uri.parse(item.uri)
+        }
     }
 
     // ── Loop-kick debounce ───────────────────────────────────────────────
@@ -784,6 +810,12 @@ class PlaybackEngine(private val context: Context) {
     }
 
     private fun evictCachedCopy(item: PlanItem) {
+        // Evict the file that actually played — during a rendition flip that is the
+        // fallback (previous-hash) file, which the exact-hash path below can't name.
+        resolvedLocalFiles.remove(item.contentVersionId)?.let { played ->
+            runCatching { played.delete() }
+            return
+        }
         val sha = item.sha256 ?: return
         val ext = item.ext ?: return
         AssetDownloader.evictCorrupt(context, item.contentVersionId, "current", sha, ext)
@@ -1113,12 +1145,9 @@ class PlaybackEngine(private val context: Context) {
         // for the *next* clip is now stale — drop it (and its two-decoder pressure).
         releasePreload()
 
-        val localFile = item.sha256?.let { sha256 ->
-            item.ext?.let { ext ->
-                AssetDownloader.getCachedFile(context, item.contentVersionId, "current", sha256, ext)
-            }
-        }
-        val resolvedUri = if (localFile != null) android.net.Uri.fromFile(localFile) else android.net.Uri.parse(item.uri)
+        // Same resolution as renderItem(): exact hash, then the rendition-flip
+        // fallback, then streaming — see resolvedUriFor().
+        val resolvedUri = resolvedUriFor(item)
 
         when (item.type) {
             "video" -> {
@@ -1127,18 +1156,7 @@ class PlaybackEngine(private val context: Context) {
                 player.clearMediaItems()
                 player.removeListener(videoEndListener)
                 player.addListener(videoEndListener)
-                val mimeType = when (item.ext?.lowercase()) {
-                    "mp4"  -> MimeTypes.VIDEO_MP4
-                    "webm" -> MimeTypes.VIDEO_WEBM
-                    "mkv"  -> MimeTypes.VIDEO_MATROSKA
-                    "mov"  -> "video/quicktime"
-                    else   -> null
-                }
-                val mediaItem = if (mimeType != null) {
-                    MediaItem.Builder().setUri(resolvedUri).setMimeType(mimeType).build()
-                } else {
-                    MediaItem.fromUri(resolvedUri)
-                }
+                val mediaItem = mediaItemFor(item, resolvedUri)
                 // Same first-frame gating as renderItem() -- see videoEndListener.onRenderedFirstFrame().
                 pendingOldView = listOf(pv, iv, wv).firstOrNull { it !== pv && it.visibility == android.view.View.VISIBLE }
                 player.setMediaItem(mediaItem)
