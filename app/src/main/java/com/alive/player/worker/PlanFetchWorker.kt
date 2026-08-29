@@ -75,6 +75,7 @@ class PlanFetchWorker(
                 cfg.downloadConnectTimeoutMs?.let { prefs.setDownloadConnectTimeoutMs(it) }
                 cfg.downloadReadTimeoutMs?.let { prefs.setDownloadReadTimeoutMs(it) }
             }
+            prefs.setSoundAdMuted(result.soundAdMuted)
 
             if (!result.notModified && result.rawJson != null) {
                 dao.upsert(

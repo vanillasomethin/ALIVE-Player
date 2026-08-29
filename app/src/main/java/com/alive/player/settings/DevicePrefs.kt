@@ -160,6 +160,12 @@ class DevicePrefs(private val context: Context) {
     fun setDownloadReadTimeoutMs(ms: Int) { statusPrefs.edit().putInt(KEY_DL_READ_TIMEOUT_MS, ms).apply() }
     fun getDownloadReadTimeoutMs(): Int = statusPrefs.getInt(KEY_DL_READ_TIMEOUT_MS, DEFAULT_DL_READ_TIMEOUT_MS)
 
+    /** Sound Ad store-owner mute override -- like orientation, applied on every plan
+     *  poll (PlanFetchWorker) rather than read from the cached plan JSON, since it
+     *  isn't part of planHash and a notModified poll wouldn't refresh it otherwise. */
+    fun setSoundAdMuted(muted: Boolean) { statusPrefs.edit().putBoolean(KEY_SOUND_AD_MUTED, muted).apply() }
+    fun getSoundAdMuted(): Boolean = statusPrefs.getBoolean(KEY_SOUND_AD_MUTED, false)
+
     // ── OTA update state ───────────────────────────────────────────────────────────
     // A newer APK has been downloaded and verified; it is waiting either for a silent
     // install (device owner / self-installer-of-record) or for an operator to press
@@ -233,6 +239,14 @@ class DevicePrefs(private val context: Context) {
 
     fun getPlaybackAliveMs(): Long = statusPrefs.getLong(KEY_PLAYBACK_ALIVE_MS, 0L)
 
+    /** Epoch ms of the last time the Sound Ad slot actually played with audio on --
+     *  the once-per-hour cadence gate. See PlaybackEngine.resolveVolume(). */
+    fun setLastSoundAdPlayMs(ms: Long) {
+        statusPrefs.edit().putLong(KEY_LAST_SOUND_AD_PLAY_MS, ms).apply()
+    }
+
+    fun getLastSoundAdPlayMs(): Long = statusPrefs.getLong(KEY_LAST_SOUND_AD_PLAY_MS, 0L)
+
     fun clearAll() {
         prefs.edit().clear().apply()
         statusPrefs.edit().clear().apply()
@@ -275,6 +289,8 @@ class DevicePrefs(private val context: Context) {
         private const val KEY_KIOSK_KEY_LOCK         = "cfg_kiosk_key_lock"
         private const val KEY_DL_CONNECT_TIMEOUT_MS  = "cfg_dl_connect_timeout_ms"
         private const val KEY_DL_READ_TIMEOUT_MS     = "cfg_dl_read_timeout_ms"
+        private const val KEY_SOUND_AD_MUTED         = "cfg_sound_ad_muted"
+
         private const val KEY_UPDATE_READY_VC        = "update_ready_version_code"
         private const val KEY_UPDATE_READY_NAME      = "update_ready_version_name"
         private const val KEY_UPDATE_READY_APK       = "update_ready_apk_path"
@@ -283,6 +299,7 @@ class DevicePrefs(private val context: Context) {
         private const val KEY_LAST_STALL             = "diag_last_stall"
         private const val KEY_LAST_STALL_MS          = "diag_last_stall_ms"
         private const val KEY_PLAYBACK_ALIVE_MS      = "diag_playback_alive_ms"
+        private const val KEY_LAST_SOUND_AD_PLAY_MS  = "sound_ad_last_play_ms"
 
         private const val DEFAULT_RETRY_INTERVAL_MS      = 30_000L
         private const val DEFAULT_TRANSITION_DURATION_MS = 600L

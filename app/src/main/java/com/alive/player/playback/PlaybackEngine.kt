@@ -388,6 +388,28 @@ class PlaybackEngine(private val context: Context) {
         renderItem(item)
     }
 
+    /**
+     * Sound Ad add-on: base ads always stay silent (volume 0). The one loop position
+     * the server marks [PlanItem.soundEligible] gets audio for exactly one play per
+     * hour -- not looped, per spec -- gated by [DevicePrefs.getLastSoundAdPlayMs],
+     * and only if the store owner hasn't muted it via [DevicePrefs.getSoundAdMuted].
+     * That mute flag is read from prefs (not the Plan object) because it isn't part
+     * of planHash -- PlanFetchWorker applies it on every poll, same as orientation,
+     * so a mute toggle takes effect even when the plan CONTENT hasn't changed and the
+     * cached plan JSON wasn't rewritten. Called once per fresh ExoPlayer instance
+     * (renderItem's video branch); restartCurrentItem reuses that same instance/volume
+     * on a stall recovery rather than re-deciding, so a mid-play stall can't
+     * double-consume the hourly allowance.
+     */
+    private fun resolveVolume(item: PlanItem): Float {
+        val prefs = DevicePrefs(context)
+        if (!item.soundEligible || prefs.getSoundAdMuted()) return 0f
+        val now = System.currentTimeMillis()
+        if (now - prefs.getLastSoundAdPlayMs() < SOUND_AD_INTERVAL_MS) return 0f
+        prefs.setLastSoundAdPlayMs(now)
+        return 1f
+    }
+
     private fun renderItem(item: PlanItem) {
         val iv = imageView
         val wv = webView
@@ -445,6 +467,9 @@ class PlaybackEngine(private val context: Context) {
                 target.player = player
                 player.addListener(videoEndListener)
                 pendingOldView = previouslyVisible
+                // Sound Ad: the designated slot plays with audio, everything else
+                // stays silent — set before setMediaItem so the first frame is right.
+                player.volume = resolveVolume(item)
                 player.setMediaItem(mediaItemFor(item, resolvedUri))
                 player.prepare()
                 player.playWhenReady = true
@@ -1019,6 +1044,7 @@ class PlaybackEngine(private val context: Context) {
         // while a 512x512 square logo scores 1.78 and would lose 44% of its height —
         // that one gets letterboxed instead of having its wordmark chopped in half.
         const val MAX_FILL_ASPECT_RATIO = 1.35f
+        const val SOUND_AD_INTERVAL_MS = 60 * 60 * 1000L
     }
 
     private fun reloadAndAdvance() {
