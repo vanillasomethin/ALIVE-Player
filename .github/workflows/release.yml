@@ -11,9 +11,14 @@ on:
         default: internal
 
 jobs:
-  # ── Job 1: debug APK → GitHub Release (always runs, no secrets needed) ──────
+  # ── Job 1: release-signed APK → GitHub Release (needs signing secrets) ──────
+  #
+  # Signed with release.jks (same key as the Play AAB in job 2) so the OTA lineage
+  # and any future Play lineage are ONE signature — a TV migrated onto this build
+  # can be updated by either channel. Previously this job built a debug APK signed
+  # with the CI debug keystore, which no machine-sideloaded TV could ever accept.
   sideload-apk:
-    name: Build debug APK and publish GitHub Release
+    name: Build release-signed APK and publish GitHub Release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -29,11 +34,22 @@ jobs:
           distribution: temurin
           cache: gradle
 
+      # versionCode = 1,000,000 + run number. The offset puts every CI build above
+      # the 999xxx machine-sideload series (highest fielded: 999590), so the OTA can
+      # update a migrated fleet and a stale hand-numbered sideload can never outrank
+      # CI again. GITHUB_ENV exports BUILD_NUMBER to every later step in this job.
+      - name: Compute build number
+        run: echo "BUILD_NUMBER=$((1000000 + ${{ github.run_number }}))" >> "$GITHUB_ENV"
+
       - name: Write local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
+
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.SIGNING_STORE_FILE_BASE64 }}" | base64 --decode > ${{ github.workspace }}/release.jks
 
       # Icons are generated at build time from the source artwork rather than committed
       # per density, so only the two source PNGs live in the repo. Runners ship
@@ -55,19 +71,22 @@ jobs:
 
       # The fleet ships the generic flavor (isDefault; kodak exists only to flip
       # per-panel flags like DOUBLE_BUFFER_VIDEO). Building just generic also keeps
-      # CI time flat — bare assembleDebug would build every flavor.
-      - name: Build debug APK
+      # CI time flat — bare assembleRelease would build every flavor.
+      - name: Build release-signed APK
         env:
-          BUILD_NUMBER: ${{ github.run_number }}
-        run: ./gradlew assembleGenericDebug --no-daemon
+          SIGNING_STORE_FILE: ${{ github.workspace }}/release.jks
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: ./gradlew assembleGenericRelease --no-daemon
 
-      # Flavors moved the output under apk/generic/debug/; stage it back at the
-      # pre-flavor path so the manifest + release steps below stay unchanged.
+      # Flavors put the output under apk/generic/release/; stage it at a neutral path
+      # so the manifest + release steps below share one location.
       - name: Rename APK with version
         run: |
-          mkdir -p app/build/outputs/apk/debug
-          mv app/build/outputs/apk/generic/debug/app-generic-debug.apk \
-             app/build/outputs/apk/debug/alive-player-${{ github.run_number }}.apk
+          mkdir -p app/build/outputs/apk/publish
+          mv app/build/outputs/apk/generic/release/app-generic-release.apk \
+             app/build/outputs/apk/publish/alive-player-$BUILD_NUMBER.apk
 
       # OTA manifest published alongside the APK, so /api/device/update-check reads the
       # release itself instead of three hand-maintained Vercel env vars. Those had to be
@@ -75,37 +94,45 @@ jobs:
       # "no update" and OTA silently stopped working with nothing to notice.
       - name: Write OTA manifest
         run: |
-          APK=app/build/outputs/apk/debug/alive-player-${{ github.run_number }}.apk
+          APK=app/build/outputs/apk/publish/alive-player-$BUILD_NUMBER.apk
           SHA=$(sha256sum "$APK" | cut -d' ' -f1)
-          cat > app/build/outputs/apk/debug/latest.json <<JSON
+          cat > app/build/outputs/apk/publish/latest.json <<JSON
           {
-            "versionCode": ${{ github.run_number }},
-            "versionName": "1.0.${{ github.run_number }}",
-            "apkUrl": "https://github.com/${{ github.repository }}/releases/download/sideload-latest/alive-player-${{ github.run_number }}.apk",
+            "versionCode": $BUILD_NUMBER,
+            "versionName": "1.0.$BUILD_NUMBER",
+            "apkUrl": "https://github.com/${{ github.repository }}/releases/download/sideload-latest/alive-player-$BUILD_NUMBER.apk",
             "sha256": "$SHA",
             "commit": "${{ github.sha }}"
           }
           JSON
-          echo "OTA manifest:"; cat app/build/outputs/apk/debug/latest.json
+          echo "OTA manifest:"; cat app/build/outputs/apk/publish/latest.json
 
       - name: Create or update GitHub Release (sideload)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: sideload-latest
-          name: "ALIVE Player – Sideload APK (build ${{ github.run_number }})"
+          name: "ALIVE Player – Sideload APK (build ${{ env.BUILD_NUMBER }})"
           body: |
             **Sideload URL for Downloader by AFTVnews:**
             Paste this URL into the Downloader app on your Android TV / Fire TV device.
 
-            `https://github.com/${{ github.repository }}/releases/download/sideload-latest/alive-player-${{ github.run_number }}.apk`
+            `https://github.com/${{ github.repository }}/releases/download/sideload-latest/alive-player-${{ env.BUILD_NUMBER }}.apk`
+
+            Signed with the release key (`release.jks`) — installs over OTA-lineage
+            builds only. A TV still on a machine-sideloaded 999xxx debug build needs a
+            one-time uninstall + reinstall + re-pair to migrate onto this lineage.
 
             Paired screens update themselves from this release via OTA — `latest.json`
             below is the manifest `/api/device/update-check` serves to them.
             Build: `${{ github.sha }}`
           files: |
-            app/build/outputs/apk/debug/alive-player-${{ github.run_number }}.apk
-            app/build/outputs/apk/debug/latest.json
+            app/build/outputs/apk/publish/alive-player-${{ env.BUILD_NUMBER }}.apk
+            app/build/outputs/apk/publish/latest.json
           prerelease: true
+
+      - name: Clean up secrets
+        if: always()
+        run: rm -f ${{ github.workspace }}/release.jks
 
   # ── Job 2: signed AAB — build + archive only. Play Store publishing is disabled;
   # updates ship OTA (see the OTA manifest step above). The AAB is still built every
@@ -126,6 +153,10 @@ jobs:
           distribution: temurin
           cache: gradle
 
+      # Same computation as job 1 so both artifacts carry the same versionCode.
+      - name: Compute build number
+        run: echo "BUILD_NUMBER=$((1000000 + ${{ github.run_number }}))" >> "$GITHUB_ENV"
+
       - name: Decode keystore
         run: |
           echo "${{ secrets.SIGNING_STORE_FILE_BASE64 }}" | base64 --decode > ${{ github.workspace }}/release.jks
@@ -133,7 +164,7 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      # Same generation as the debug job, so both artifacts carry identical icons.
+      # Same generation as the sideload job, so both artifacts carry identical icons.
       - name: Generate launcher icons and TV banner
         run: |
           if [ -f tools/branding/alive-player-banner.png ] && [ -f tools/branding/alive-player-icon.png ]; then
@@ -147,7 +178,6 @@ jobs:
 
       - name: Build signed release AAB
         env:
-          BUILD_NUMBER: ${{ github.run_number }}
           SIGNING_STORE_FILE: ${{ github.workspace }}/release.jks
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}

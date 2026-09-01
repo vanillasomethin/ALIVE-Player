@@ -22,6 +22,10 @@ android {
         applicationId = "in.wearealive.player"
         minSdk = 26
         targetSdk = 35
+        // Numbering convention: CI supplies 1,000,000 + run number (see release.yml);
+        // hand builds sideloaded from this machine use the 999xxx series (highest
+        // fielded: 999590). The CI offset keeps every OTA/Play build above every hand
+        // build, so a migrated TV always accepts the next CI release.
         versionCode = (System.getenv("BUILD_NUMBER") ?: "1").toInt()
         versionName = "1.0.${versionCode}"
 
