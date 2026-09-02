@@ -4,7 +4,13 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
+import com.alive.player.data.AppDatabase
+import com.alive.player.data.Incident
 import com.alive.player.settings.DevicePrefs
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.io.File
 
 /**
@@ -57,10 +63,50 @@ class UpdateInstallReceiver : BroadcastReceiver() {
                 prefs.markUpdateNeedsUserAction()
             }
 
-            // Other STATUS_FAILURE_*: keep ready-state; the next periodic check
-            // re-verifies the download (cached, cheap) and retries the commit at
-            // most once per period — still never visible over playback.
-            else -> Unit
+            // Deterministic failures (see isPermanentInstallFailure): the same
+            // build fails the same way on every retry, so left in the retryable
+            // bucket a silent-capable device would re-commit it every periodic
+            // check, forever. Marking needs-user-action poisons THIS versionCode
+            // only — setUpdateReady clears the flag the moment a different version
+            // is published, so the fleet resumes silent updates on the next good
+            // build with no human in the loop.
+            else -> if (UpdateInstaller.isPermanentInstallFailure(status)) {
+                prefs.markUpdateNeedsUserAction()
+                // Surface it: this state is otherwise invisible until someone
+                // wonders why a screen is stuck on an old version. Rides the
+                // existing incident channel (next heartbeat). goAsync: onReceive
+                // is main-thread and Room (rightly) refuses main-thread writes.
+                // runCatching: crash-logging must never itself crash a kiosk
+                // (disk-full is routine on these boxes); the poison flag above is
+                // already set synchronously either way.
+                val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+                val pending = goAsync()
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        runCatching {
+                            AppDatabase.get(context).incidentDao().insert(
+                                Incident(
+                                    type = "UPDATE_INSTALL_PERMANENT_FAILURE",
+                                    timestampUtcEpochMs = System.currentTimeMillis(),
+                                    metadataJson = JSONObject()
+                                        .put("status", status)
+                                        .put("message", message ?: JSONObject.NULL)
+                                        .put("readyVersionCode", prefs.getUpdateReadyVersionCode())
+                                        .toString(),
+                                )
+                            )
+                        }
+                    } finally {
+                        pending.finish()
+                    }
+                }
+            } else {
+                // Remaining STATUS_FAILURE_*: keep ready-state; the next periodic
+                // check re-verifies the download (cached, cheap) and retries the
+                // commit at most once per period — still never visible over
+                // playback. These can genuinely clear on their own (storage freed,
+                // restriction lifted), so they stay retryable.
+            }
         }
     }
 }

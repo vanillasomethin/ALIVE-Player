@@ -192,4 +192,16 @@ object UpdateInstaller {
         nowMs: Long,
     ): Boolean =
         !operatorRequested && sessionCommitted && nowMs - sessionCreatedMs < IN_FLIGHT_WINDOW_MS
+
+    /**
+     * Whether a PackageInstaller failure status is deterministic — the same build
+     * will fail the same way on every retry, so re-committing it is a forever-loop,
+     * not persistence. INVALID is a malformed APK; INCOMPATIBLE is a signature
+     * mismatch (exactly what a signing-scheme migration produces fleet-wide).
+     * Everything else (generic FAILURE, BLOCKED, CONFLICT, STORAGE) can genuinely
+     * clear on its own — storage freed, restriction lifted — and stays retryable.
+     */
+    internal fun isPermanentInstallFailure(status: Int): Boolean =
+        status == PackageInstaller.STATUS_FAILURE_INVALID ||
+            status == PackageInstaller.STATUS_FAILURE_INCOMPATIBLE
 }
