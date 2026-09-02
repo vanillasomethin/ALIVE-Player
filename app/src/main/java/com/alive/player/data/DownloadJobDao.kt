@@ -19,11 +19,19 @@ interface DownloadJobDao {
     @Query("UPDATE download_jobs SET size_bytes=:sizeBytes WHERE asset_key=:key")
     suspend fun updateSize(key: String, sizeBytes: Long)
 
+    /** Terminal exit for a permanently-failed item — a FAILED row left behind
+     *  would block [clearIfAllDone] for every future sync. */
     @Query("DELETE FROM download_jobs WHERE asset_key = :key")
     suspend fun delete(key: String)
 
     @Query("DELETE FROM download_jobs")
     suspend fun clearAll()
+
+    /** Retires a finished batch: deletes every row iff none is still undone.
+     *  One atomic statement so a concurrent RUNNING insert can never be swept —
+     *  it either lands before this runs (and blocks it) or after (and survives). */
+    @Query("DELETE FROM download_jobs WHERE NOT EXISTS (SELECT 1 FROM download_jobs WHERE state != 'DONE')")
+    suspend fun clearIfAllDone()
 
     @Query("SELECT COUNT(*) FROM download_jobs WHERE state = 'DONE'")
     suspend fun doneCount(): Int

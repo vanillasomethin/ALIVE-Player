@@ -9,6 +9,7 @@ import androidx.work.WorkerParameters
 import com.alive.player.BuildConfig
 import com.alive.player.data.AppDatabase
 import com.alive.player.data.DeviceDecommissioner
+import com.alive.player.data.DownloadJob
 import com.alive.player.data.PlanCache
 import com.alive.player.network.ApiHttpException
 import com.alive.player.network.DeviceApiProvider
@@ -104,6 +105,21 @@ class PlanFetchWorker(
                     val useHevc = item.type.equals("video", ignoreCase = true) &&
                         !item.hevcUrl.isNullOrBlank() && !item.hevcMd5.isNullOrBlank() &&
                         DecoderCapabilities.preferHevc()
+                    // Seed the progress row NOW, not when the worker eventually
+                    // starts: WorkManager runs only a few workers at a time, and
+                    // without pre-seeded rows an early cache-hit finisher sweeps
+                    // the table before later items are even represented — the
+                    // overlay counts "1 of 1" N times instead of "k of N" once.
+                    // Insert is IGNORE, so an in-flight row's state is untouched.
+                    AppDatabase.get(applicationContext).downloadJobDao().insert(
+                        DownloadJob(
+                            assetKey = "${item.contentId}_current",
+                            state = "QUEUED",
+                            retries = 0,
+                            bytesDownloaded = 0L,
+                            error = null,
+                        )
+                    )
                     DownloadWorker.enqueue(
                         applicationContext,
                         item.contentId,
