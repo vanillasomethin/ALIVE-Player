@@ -19,9 +19,11 @@ import com.alive.player.R
  * even if the main process's main thread fully freezes (ANR) — PlaybackWatchdog, by
  * contrast, runs a Handler on that same main Looper and would freeze right along with
  * it. This service can't detect a frozen main thread by calling into it (a frozen
- * process can't answer Binder calls); instead it reads the plain heartbeat file the
- * main process writes from a background thread (ProcessHeartbeat), and if that file
- * goes stale, kills the main process outright and relaunches it.
+ * process can't answer Binder calls); instead it reads the plain heartbeat file
+ * (ProcessHeartbeat) whose value is the main process's last main-thread-proven
+ * instant, relayed to disk off-thread — so it goes stale on a main-thread ANR as
+ * well as a whole-process freeze — and if it goes stale, kills the main process
+ * outright and relaunches it.
  *
  * Killing a sibling process of the same app is safe and doesn't need any special
  * permission: all of an app's declared processes (default + ":watchdog") share one
@@ -76,10 +78,11 @@ class WatchdogService : Service() {
         if (staleMs < STALE_THRESHOLD_MS) return
 
         val mainPid = findMainProcessPid() ?: return
-        // The heartbeat is only ever stale because the main process is wedged (its
-        // background heartbeat writer only stops if the whole process is frozen or
-        // dead) — kill it outright and let BootReceiver/HOME-relaunch/our own restart
-        // bring it back clean rather than trying to nudge a possibly-corrupted state.
+        // The heartbeat is only ever stale because the main process is wedged — its
+        // main thread stopped proving itself (ANR) or the whole process froze and the
+        // relay writer stopped — kill it outright and let BootReceiver/HOME-relaunch/
+        // our own restart bring it back clean rather than trying to nudge a
+        // possibly-corrupted state.
         Process.killProcess(mainPid)
         // runCatching: on Android 15 a background FGS start can throw
         // ForegroundServiceStartNotAllowedException on non-owner installs. Crashing

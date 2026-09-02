@@ -43,10 +43,12 @@ object DeviceDecommissioner {
         // the heartbeat is already >90s stale (playback down, 410 arriving via a
         // worker), a live watchdog's next 20s check would SIGKILL this process
         // mid-wipe — after the prefs clear but before the DB clears — stranding an
-        // unpaired zombie that still plays its cached plan. A fresh write buys the
-        // full watchdog threshold, far longer than the wipe needs to reach the
-        // watchdog stop below.
-        ProcessHeartbeat.write(appContext)
+        // unpaired zombie that still plays its cached plan. A fresh grace write buys
+        // the full watchdog threshold, far longer than the wipe needs to reach the
+        // watchdog stop below — and it also floors the relay stamp, so the still-
+        // running relay writer can't replace this grace with a frozen (ANR'd) stamp
+        // in the seconds before requestStop lands.
+        ProcessHeartbeat.writeGraceStamp(appContext)
 
         // Pairing state goes FIRST: requestStop on a service that is not running is
         // itself a START (onCreate runs before the stop action is seen), and
