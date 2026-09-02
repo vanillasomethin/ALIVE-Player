@@ -80,7 +80,7 @@ class BootReceiver : BroadcastReceiver() {
             // reads as >90s stale. Without this fresh write, the watchdog's first check
             // (~20s) can kill the app mid-launch on slow boots where the service start
             // above was denied (Android 15) and the activity chain is still coming up.
-            ProcessHeartbeat.write(context)
+            ProcessHeartbeat.writeGraceStamp(context)
             runCatching { WatchdogService.ensureRunning(context) }
         } else {
             val activityIntent = Intent(context, PairingActivity::class.java).apply {
