@@ -65,13 +65,22 @@ object UpdateInstaller {
      *
      * Synchronized: the periodic worker, the one-shot worker and the Settings button
      * can all reach here; unserialized they would abandon each other's live session —
-     * including one whose confirm dialog is on screen. A session committed within the
-     * last 10 minutes is treated as in-flight and left alone entirely; older committed
-     * ones are reclaimed (e.g. a swallowed PENDING nobody will ever answer).
+     * including one whose confirm dialog is on screen. Unattended, a session committed
+     * within the last 10 minutes is treated as in-flight and left alone entirely;
+     * older committed ones are reclaimed (e.g. a swallowed PENDING nobody will ever
+     * answer). For an operator-requested install the in-flight guard yields — see
+     * [inFlightGuardBlocks].
+     *
+     * [operatorRequested] is intent, not presence: true only when this commit exists
+     * BECAUSE an operator asked for the dialog (the worker's non-silent path with the
+     * gate open). The silent path always passes false — an operator merely browsing
+     * Settings while a periodic silent install is mid-flight must not cause that
+     * session to be abandoned and re-streamed.
      */
     @Synchronized
-    fun commit(context: Context, apk: File) {
+    fun commit(context: Context, apk: File, operatorRequested: Boolean) {
         val installer = context.packageManager.packageInstaller
+        val prefs = com.alive.player.settings.DevicePrefs(context)
 
         val sessions = installer.mySessions
         // SessionInfo.isCommitted is API 29 and createdMillis API 30 — touching them
@@ -84,13 +93,17 @@ object UpdateInstaller {
         // abandons an in-flight twin and re-streams the same SHA-verified APK —
         // convergent, and strictly better than the pre-guard crash.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val inFlightWindowMs = 10L * 60 * 1000
-            if (sessions.any {
-                    it.isCommitted && System.currentTimeMillis() - it.createdMillis < inFlightWindowMs
-                }
-            ) return
+            val nowMs = System.currentTimeMillis()
+            if (sessions.any { inFlightGuardBlocks(operatorRequested, it.isCommitted, it.createdMillis, nowMs) }) return
         }
 
+        // Park the persisted id on 0 (never a real session id) for the sweep below:
+        // abandonSession delivers an async ABORTED carrying the old id, and until the
+        // new id is persisted further down that broadcast would still match — the
+        // receiver would record a phantom operator Cancel (markUpdateNeedsUserAction)
+        // for a session nobody cancelled. 0 also beats -1 here: -1 is what the
+        // receiver's getIntExtra returns for a broadcast missing the extra entirely.
+        prefs.setPendingInstallSessionId(0)
         sessions.forEach { info ->
             runCatching { installer.abandonSession(info.sessionId) }
         }
@@ -104,7 +117,7 @@ object UpdateInstaller {
         // Persisted BEFORE commit: the receiver only honours statuses carrying this id,
         // so ABORTED broadcasts from the sessions abandoned above (or pruned by the OS)
         // can never be misread as an operator pressing Cancel.
-        com.alive.player.settings.DevicePrefs(context).setPendingInstallSessionId(sessionId)
+        prefs.setPendingInstallSessionId(sessionId)
         installer.openSession(sessionId).use { session ->
             FileInputStream(apk).use { input ->
                 session.openWrite("update", 0, apk.length()).use { output ->
@@ -156,4 +169,27 @@ object UpdateInstaller {
 
     /** AssetDownloader contentId under which update APKs are cached. */
     const val UPDATE_CONTENT_ID = "player-update"
+
+    internal const val IN_FLIGHT_WINDOW_MS = 10L * 60 * 1000
+
+    /**
+     * Whether an existing session may block this commit. Only a committed session
+     * younger than [IN_FLIGHT_WINDOW_MS] can — and never for an operator-REQUESTED
+     * install. The guard exists so the periodic and one-shot workers cannot abandon
+     * each other's live silent install, and that protection must hold even while an
+     * operator happens to be browsing Settings — which is why the parameter is the
+     * caller's intent, not UpdateGate presence. When the operator taps Install, the
+     * only session the guard could protect is one whose PENDING was swallowed during
+     * playback (or whose dialog that same operator is looking at) — either way,
+     * abandoning it and re-committing re-delivers PENDING_USER_ACTION and the
+     * receiver (gate open) launches the dialog immediately. Blocking instead is how
+     * the Install button used to silently no-op for up to ten minutes.
+     */
+    internal fun inFlightGuardBlocks(
+        operatorRequested: Boolean,
+        sessionCommitted: Boolean,
+        sessionCreatedMs: Long,
+        nowMs: Long,
+    ): Boolean =
+        !operatorRequested && sessionCommitted && nowMs - sessionCreatedMs < IN_FLIGHT_WINDOW_MS
 }
