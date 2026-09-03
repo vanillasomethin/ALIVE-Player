@@ -73,7 +73,12 @@ class PairingActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        applyOrientationPref()
+        // Deliberately NOT applyOrientationPref(): on the Foxsky/KTC panels the OS
+        // accepts the portrait request without physically rotating and relayouts the
+        // activity into a squeezed sideways strip — the pairing code rendered one
+        // clipped character per line (seen live on the 192.168.15.215 bench TV,
+        // 2026-09-01). Stay panel-native and software-rotate the container instead,
+        // exactly like PlaybackActivity's content_rotator.
 
         // Already fully paired — go straight to playback
         if (DevicePrefs(this).isPaired()) {
@@ -82,6 +87,7 @@ class PairingActivity : Activity() {
         }
 
         setContentView(R.layout.activity_pairing)
+        applyContentRotationTo(findViewById(R.id.pairing_rotator))
 
         // "Seen." in brand red
         val headline = SpannableStringBuilder("Seen.\nRemembered.\nBought.")

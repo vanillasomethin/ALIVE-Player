@@ -1,9 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- New pairing UI: device auto-claims on boot, shows a 6-char code, waits for admin to confirm -->
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Outer FrameLayout + centered pairing_rotator: PairingActivity software-rotates the
+     rotator via applyContentRotationTo() instead of requestedOrientation — on the
+     Foxsky/KTC panels the OS accepts an orientation request without physically
+     rotating and squeezes the UI (the pairing code clipped to one char per line).
+     Same pattern as PlaybackActivity's content_rotator; centering matters because
+     rotation pivots about the view centre. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/alive_ink"
+    android:background="@color/alive_ink">
+
+<RelativeLayout
+    android:id="@+id/pairing_rotator"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layout_gravity="center"
     android:padding="48dp">
 
     <!-- Main content: two-column on landscape TV -->
@@ -413,3 +425,5 @@
         android:fontFamily="@font/poppins_regular" />
 
 </RelativeLayout>
+
+</FrameLayout>
