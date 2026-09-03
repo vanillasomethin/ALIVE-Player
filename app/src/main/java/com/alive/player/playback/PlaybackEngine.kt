@@ -81,6 +81,15 @@ class PlaybackEngine(private val context: Context) {
 
     private var pendingItem: PlanItem? = null
 
+    // Uptime deadline of the current video's slot (armed alongside the slot timer =
+    // arm time + durationMs, WITHOUT the grace). Lets the STATE_ENDED handler tell a
+    // full-length clip ending naturally (advance now, today's behaviour) from a clip
+    // shorter than its booked window — a multi-slot "round up and hold" span — which
+    // must freeze on its last frame until exactly durationMs elapses so the 10s grid
+    // stays exact. 0 = no video slot armed; a stale deadline can never hold because
+    // playItem() resets it before each item.
+    private var videoSlotDeadlineMs = 0L
+
     // The view to hide once the incoming video's first frame actually renders (set right
     // before ExoPlayer.prepare(), consumed by videoEndListener.onRenderedFirstFrame()).
     // playerView itself is never gated this way -- see transitionViews() -- so hiding
@@ -534,6 +543,7 @@ class PlaybackEngine(private val context: Context) {
 
         // First frame already up, so arm the slot timer immediately (no first-frame wait),
         // and line up the clip after this one.
+        videoSlotDeadlineMs = android.os.SystemClock.uptimeMillis() + item.durationMs
         scheduleAdvanceTimer(item, item.durationMs + VIDEO_END_GRACE_MS)
         schedulePreloadForNext()
     }
@@ -695,7 +705,12 @@ class PlaybackEngine(private val context: Context) {
             // The + grace lets STATE_ENDED (natural end) win for full-length clips, so the
             // whole video plays; the timer only caps a video deliberately trimmed to a
             // shorter slot. Guarded on type because this listener is only attached for video.
-            currentItem?.let { if (it.type == "video") scheduleAdvanceTimer(it, it.durationMs + VIDEO_END_GRACE_MS) }
+            currentItem?.let {
+                if (it.type == "video") {
+                    videoSlotDeadlineMs = android.os.SystemClock.uptimeMillis() + it.durationMs
+                    scheduleAdvanceTimer(it, it.durationMs + VIDEO_END_GRACE_MS)
+                }
+            }
             // Now that this clip is up, line up the next one on the inactive surface so the
             // coming boundary is gapless (no-op unless the next item is a video).
             schedulePreloadForNext()
@@ -705,6 +720,21 @@ class PlaybackEngine(private val context: Context) {
             if (playbackState == Player.STATE_ENDED) {
                 cancelFirstFrameDeadline()
                 cancelStallWatchdog()
+                // "Round up and hold": a clip shorter than its booked window (multi-slot
+                // span — e.g. a 25s ad in a 30s window) must not advance at natural end.
+                // Freeze on the last frame (ExoPlayer keeps it on the surface at
+                // STATE_ENDED) and let the slot timer advance at exactly durationMs — no
+                // grace here, the grace only exists to let natural end win below. Clips
+                // whose length ≈ durationMs (within the grace) still advance at natural
+                // end, so full-length videos are never cut. Watchdogs are safe with the
+                // pause: both stall and frozen-glass detection skip a non-playing player.
+                val remainingMs = videoSlotDeadlineMs - android.os.SystemClock.uptimeMillis()
+                val holdItem = currentItem
+                if (remainingMs > VIDEO_END_GRACE_MS && holdItem != null && holdItem.type == "video") {
+                    exoPlayer?.playWhenReady = false
+                    scheduleAdvanceTimer(holdItem, remainingMs)
+                    return
+                }
                 cancelAdvanceTimer()
                 reloadAndAdvance()
             }
@@ -1029,6 +1059,9 @@ class PlaybackEngine(private val context: Context) {
         const val IMAGE_LOAD_GRACE_MS = 15_000L
         // Slack added to a video's slot timer so the clip's own STATE_ENDED (natural end)
         // wins for full-length videos — the timer then only enforces a deliberate trim.
+        // Doubles as the hold threshold: a clip ending MORE than this before its slot
+        // deadline is a multi-slot span, held on its last frame until durationMs elapses
+        // (see the STATE_ENDED handler) instead of advancing early.
         const val VIDEO_END_GRACE_MS = 750L
         // How long before a clip's slot ends to start preparing the next clip on the other
         // surface. Long enough to cover prepare()+first-frame decode (~0.5-1s here) with
@@ -1151,6 +1184,9 @@ class PlaybackEngine(private val context: Context) {
         // Liveness heartbeat: advancing to a new item proves the playback loop and UI
         // thread are still running, which a frozen screen cannot fake.
         DevicePrefs(context).markPlaybackAlive()
+        // No slot armed yet for this item; re-set when its video timer is armed. A stale
+        // deadline surviving here could hold-and-freeze an item that should advance.
+        videoSlotDeadlineMs = 0L
         val now = NtpSyncManager.now(context)
         currentItem?.let { emitCompleteEvent(it, now) }
         currentItem = item
@@ -1179,6 +1215,7 @@ class PlaybackEngine(private val context: Context) {
             "video" -> {
                 val player = exoPlayer ?: return
                 cancelAdvanceTimer()
+                videoSlotDeadlineMs = 0L   // re-armed by onRenderedFirstFrame for the replay
                 player.clearMediaItems()
                 player.removeListener(videoEndListener)
                 player.addListener(videoEndListener)
