@@ -127,17 +127,18 @@ class PlaybackEngine(private val context: Context) {
     //    completely unrelated third-party app on the same unit, and survives a full
     //    device reboot -- not a stuck/transient state, a real incompatibility with
     //    Media3's dynamic output-buffer request on this vendor's OMX build.
-    // Excluding both by exact component name (not a vendor-substring match) forces
-    // MediaCodecSelector.DEFAULT's next candidate for AVC content -- trading CPU/power
-    // efficiency for actually rendering frames -- while leaving these vendors' OTHER
-    // hardware decoders (e.g. OMX.hisi.video.decoder.hevc, confirmed working) available.
-    // A blanket "hisi"/"realtek" substring match previously excluded those too, forcing
-    // software decode even for codecs that never had a confirmed hardware bug. The
-    // exclusion set lives in DecoderCapabilities since PlanFetchWorker/PlanModels also
-    // need it to decide whether to prefer an HEVC content rendition on these devices.
+    // Excluding by (component name, mime) -- not a bare name -- forces MediaCodecSelector.
+    // DEFAULT's next candidate for the codec a component is broken for, while leaving that
+    // same component available for codecs it handles fine. This is essential on Realtek,
+    // whose OMX.realtek.video.decoder is ONE component serving both AVC (broken) and HEVC
+    // (works): a name-only exclusion also removed it as an HEVC decoder, so a broken-AVC
+    // Realtek panel lost its hardware-HEVC path and software-decoded AVC instead (1080p =
+    // ~57% frozen on the field Kodak/RT41). Keying on mime lets HEVC content use it while
+    // AVC still falls back. The broken-set lives in DecoderCapabilities since PlanFetchWorker
+    // /PlanModels also consult it (via preferHevc) to pick which rendition to download.
     private val safeMediaCodecSelector = MediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
         val infos = MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, requiresSecureDecoder, requiresTunnelingDecoder)
-        infos.filterNot { it.name in DecoderCapabilities.BROKEN_HARDWARE_DECODER_NAMES }
+        infos.filterNot { DecoderCapabilities.isBroken(it.name, mimeType) }
     }
 
     fun attachViews(playerViewA: PlayerView, playerViewB: PlayerView, imageView: ImageView, webView: WebView) {
