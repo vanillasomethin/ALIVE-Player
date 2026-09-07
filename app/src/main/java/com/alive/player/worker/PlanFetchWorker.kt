@@ -136,7 +136,7 @@ class PlanFetchWorker(
                 // *empty* plan (screen never assigned a schedule). Without this check
                 // the card would say "Schedule up to date" on every poll for as long
                 // as the plan stays empty, instead of pointing at the admin panel.
-                result.notModified && existing != null && planJsonHasNoItems(existing.planJson) ->
+                result.notModified && existing != null && planJsonHasNothingToPlay(existing.planJson) ->
                     prefs.setFetchStatus(FetchStatus.NO_SCHEDULE.also {
                         it.message = "No schedule assigned — go to wearealive.in/admin"
                     })
@@ -147,9 +147,20 @@ class PlanFetchWorker(
                             "fetched ${age}m ago"
                         } ?: "cached"})"
                     })
-                result.items.isEmpty() ->
+                // Nothing to play only when BOTH lists are empty. A slot-mode store's
+                // sold loop arrives as the plan's `fallback` and its `items` stay empty
+                // unless a schedule also targets the screen, so keying "no schedule" off
+                // items alone marked every healthy slot screen broken while it happily
+                // played its loop — see PlaybackEngine, which plays fallbackItems too.
+                result.items.isEmpty() && result.fallbackItems.isEmpty() ->
                     prefs.setFetchStatus(FetchStatus.NO_SCHEDULE.also {
                         it.message = "No schedule assigned — go to wearealive.in/admin"
+                    })
+                // Fallback-only: slot mode (or the admin fallback playlist). Named
+                // distinctly so ops can tell it apart from a scheduled screen at a glance.
+                result.items.isEmpty() ->
+                    prefs.setFetchStatus(FetchStatus.OK.also {
+                        it.message = "${result.fallbackItems.size} slot item(s) ready"
                     })
                 else ->
                     prefs.setFetchStatus(FetchStatus.OK.also {
@@ -259,12 +270,17 @@ class PlanFetchWorker(
 }
 
 /**
- * Applies the fresh-fetch `result.items.isEmpty()` check to a cached plan body, so the
- * status a plan produced on a 200 is the same one its 304s keep reporting. A missing
- * `items` key counts as empty for the same reason (`optJSONArray(...) ?: JSONArray()`
- * on the fetch path). Malformed JSON reports false: a corrupt cache is not "nothing
- * assigned in the admin" and must not surface that guidance.
+ * Applies the fresh-fetch emptiness check to a cached plan body, so the status a plan
+ * produced on a 200 is the same one its 304s keep reporting. Both `items` and the
+ * `fallback` loop count as content — a slot-mode plan only ever fills `fallback`, and
+ * ignoring it reported "no schedule" for a cached loop that was playing fine. A missing
+ * key counts as empty for the same reason as on the fetch path
+ * (`optJSONArray(...) ?: JSONArray()`). Malformed JSON reports false: a corrupt cache is
+ * not "nothing assigned in the admin" and must not surface that guidance.
  */
-internal fun planJsonHasNoItems(planJson: String): Boolean =
-    runCatching { (org.json.JSONObject(planJson).optJSONArray("items")?.length() ?: 0) == 0 }
-        .getOrDefault(false)
+internal fun planJsonHasNothingToPlay(planJson: String): Boolean =
+    runCatching {
+        val root = org.json.JSONObject(planJson)
+        (root.optJSONArray("items")?.length() ?: 0) == 0 &&
+            (root.optJSONArray("fallback")?.length() ?: 0) == 0
+    }.getOrDefault(false)
