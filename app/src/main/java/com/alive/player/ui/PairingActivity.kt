@@ -73,7 +73,11 @@ class PairingActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        applyOrientationPref()
+        // Pairing is a one-time setup step read by an installer standing at the screen —
+        // render it in the panel's native landscape orientation so the code is legible,
+        // rather than letterboxing the two-column layout into an unreadable portrait
+        // sliver on panels that don't physically rotate. See applySetupOrientation().
+        applySetupOrientation()
 
         // Already fully paired — go straight to playback
         if (DevicePrefs(this).isPaired()) {
@@ -97,6 +101,15 @@ class PairingActivity : Activity() {
         }
 
         val prefs = DevicePrefs(this)
+
+        // If this screen was just removed in the admin panel (410/FCM decommission),
+        // say so — a persistent banner above the pairing card — so it doesn't look like
+        // the player crashed. Shown once, then the flag is cleared. Separate from the
+        // card()/status() UI so re-claiming below can't wipe it off screen.
+        if (prefs.wasDecommissioned()) {
+            findViewById<TextView>(R.id.decommission_banner).visibility = View.VISIBLE
+            prefs.clearDecommissioned()
+        }
 
         // If already claimed but not yet confirmed by admin, resume showing the code
         val existingToken = prefs.getDeviceToken()

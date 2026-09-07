@@ -2,12 +2,14 @@ package com.alive.player.settings
 
 import android.app.Activity
 import android.os.Bundle
-import com.alive.player.ui.applyOrientationPref
+import com.alive.player.ui.applySetupOrientation
 import com.alive.player.worker.UpdateGate
 
 class SettingsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        applyOrientationPref()
+        // Operator settings screen — same reasoning as pairing: render native landscape
+        // so it's readable on non-rotating panels, not a squeezed portrait sliver.
+        applySetupOrientation()
         super.onCreate(savedInstanceState)
         fragmentManager.beginTransaction()
             .replace(android.R.id.content, SettingsFragment())
