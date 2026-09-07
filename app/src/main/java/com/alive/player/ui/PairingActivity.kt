@@ -73,11 +73,15 @@ class PairingActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Pairing is a one-time setup step read by an installer standing at the screen —
-        // render it in the panel's native landscape orientation so the code is legible,
-        // rather than letterboxing the two-column layout into an unreadable portrait
-        // sliver on panels that don't physically rotate. See applySetupOrientation().
-        applySetupOrientation()
+        // Deliberately NO orientation request here — not applyOrientationPref(), and
+        // not the applySetupOrientation() that SettingsActivity uses either. On the
+        // Foxsky/KTC panels the OS accepts a portrait request without physically
+        // rotating and relayouts the activity into a squeezed sideways strip — the
+        // pairing code rendered one clipped character per line (seen live on the
+        // 192.168.15.215 bench TV, 2026-09-01). And native landscape reads sideways
+        // on a portrait-MOUNTED panel, which is where an installer actually stands.
+        // Stay panel-native and software-rotate the container to the signage
+        // orientation instead, exactly like PlaybackActivity's content_rotator.
 
         // Already fully paired — go straight to playback
         if (DevicePrefs(this).isPaired()) {
@@ -86,6 +90,7 @@ class PairingActivity : Activity() {
         }
 
         setContentView(R.layout.activity_pairing)
+        applyContentRotationTo(findViewById(R.id.pairing_rotator))
 
         // "Seen." in brand red
         val headline = SpannableStringBuilder("Seen.\nRemembered.\nBought.")
