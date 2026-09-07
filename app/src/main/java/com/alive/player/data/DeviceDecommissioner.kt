@@ -35,7 +35,7 @@ object DeviceDecommissioner {
     // UpdateCheck), which cancels this coroutine — without this every subsequent
     // suspending dao.clear() would throw CancellationException (swallowed by
     // runCatching) and the "wiped" device would keep its plan/PoP/asset rows.
-    suspend fun wipe(context: Context, reason: String): Unit = withContext(NonCancellable) {
+    suspend fun wipe(context: Context, reason: String, removedRemotely: Boolean = true): Unit = withContext(NonCancellable) {
         val appContext = context.applicationContext
         Log.i(TAG, "Decommissioning device: $reason")
 
@@ -43,10 +43,12 @@ object DeviceDecommissioner {
         // the heartbeat is already >90s stale (playback down, 410 arriving via a
         // worker), a live watchdog's next 20s check would SIGKILL this process
         // mid-wipe — after the prefs clear but before the DB clears — stranding an
-        // unpaired zombie that still plays its cached plan. A fresh write buys the
-        // full watchdog threshold, far longer than the wipe needs to reach the
-        // watchdog stop below.
-        ProcessHeartbeat.write(appContext)
+        // unpaired zombie that still plays its cached plan. A fresh grace write buys
+        // the full watchdog threshold, far longer than the wipe needs to reach the
+        // watchdog stop below — and it also floors the relay stamp, so the still-
+        // running relay writer can't replace this grace with a frozen (ANR'd) stamp
+        // in the seconds before requestStop lands.
+        ProcessHeartbeat.writeGraceStamp(appContext)
 
         // Pairing state goes FIRST: requestStop on a service that is not running is
         // itself a START (onCreate runs before the stop action is seen), and
@@ -83,6 +85,13 @@ object DeviceDecommissioner {
         runCatching { db.incidentDao().clearAll() }
         runCatching { appContext.getExternalFilesDir("cache")?.deleteRecursively() }
         runCatching { appContext.cacheDir.deleteRecursively() }
+
+        // Remote removal (deleted in admin via 410/FCM): leave a flag — set AFTER
+        // clearAll so it survives — so PairingActivity tells the operator the screen was
+        // removed and needs re-pairing, instead of dropping to pairing with no context.
+        // Survives even when this launch is dropped (non-owner 29+): BootReceiver brings
+        // pairing up next boot and the banner still shows. Manual reset skips this.
+        if (removedRemotely) DevicePrefs(appContext).setDecommissioned()
 
         // CLEAR_TASK tears down PlaybackActivity so the dead plan can't stay on
         // screen. Legal from the background on Device-Owner installs and API < 29;

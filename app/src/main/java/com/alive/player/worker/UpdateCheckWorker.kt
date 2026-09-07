@@ -76,8 +76,15 @@ class UpdateCheckWorker(
                 val canAuto = UpdateInstaller.canInstallSilently(applicationContext) &&
                     UpdateInstaller.canRelaunchUiAfterInstall(applicationContext) &&
                     !prefs.updateNeedsUserAction()
+                // operatorRequested is intent, not presence: only the non-silent path
+                // with the gate open means "a human asked for the confirm dialog".
+                // A silent commit stays operatorRequested=false even if someone is
+                // browsing Settings, so it can never bulldoze an in-flight twin.
                 if (canAuto || UpdateGate.userActionAllowed) {
-                    UpdateInstaller.commit(applicationContext, apk)
+                    UpdateInstaller.commit(
+                        applicationContext, apk,
+                        operatorRequested = !canAuto && UpdateGate.userActionAllowed,
+                    )
                 }
                 Result.success()
             } catch (ex: Exception) {

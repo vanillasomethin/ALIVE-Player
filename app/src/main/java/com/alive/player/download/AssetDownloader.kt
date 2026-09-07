@@ -133,8 +133,6 @@ class AssetDownloader(private val context: Context) {
                 lastAccessedEpochMs = System.currentTimeMillis(),
             )
         )
-        db.downloadJobDao().delete("${contentId}_$version")
-
         final
     }
 

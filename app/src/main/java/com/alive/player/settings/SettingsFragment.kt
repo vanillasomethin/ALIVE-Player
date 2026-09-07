@@ -198,7 +198,7 @@ class SettingsFragment : Fragment() {
             // manual reset and remote deletion cannot drift apart. It also cancels
             // the periodic workers and stops playback before clearing, then brings
             // up PairingActivity itself.
-            DeviceDecommissioner.wipe(ctx, "operator reset from Settings")
+            DeviceDecommissioner.wipe(ctx, "operator reset from Settings", removedRemotely = false)
         }
     }
 

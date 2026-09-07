@@ -41,6 +41,9 @@ data class FetchPlanResult(
     val orientation: String? = null, // "LANDSCAPE" | "PORTRAIT" | "AUTO" — admin-assigned screen orientation
     val config: PlayerConfig? = null,
     val fallbackItems: List<StudioPlanItem> = emptyList(), // admin fallback playlist — needs downloading too
+    // Sound Ad store-owner mute override (Alive Partner app). Like orientation/config,
+    // not part of planHash, so it's read on every poll, not just when content changes.
+    val soundAdMuted: Boolean = false,
 )
 
 data class PopEventPayload(

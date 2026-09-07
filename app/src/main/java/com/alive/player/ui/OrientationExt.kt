@@ -50,6 +50,20 @@ fun Activity.applyContentRotationTo(container: View) {
     container.layoutParams = lp
 }
 
+// Operator screens (settings) must be readable on the panel AS IT PHYSICALLY IS.
+// Applying the signage portrait *preference* here is wrong: the vast majority of
+// budget TV panels don't physically rotate when the OS accepts a portrait request,
+// so the landscape-designed setup layout gets letterboxed into a squeezed portrait
+// sliver in the middle of the panel — unreadable (field-confirmed on a 1280x720
+// Realtek panel). These screens take the panel's NATIVE landscape orientation
+// instead; PLAYBACK content and the pairing screen follow the portrait preference
+// by software rotation (applyContentRotation()/applyContentRotationTo() above),
+// which actually fills a non-rotating panel. Safe-wrapped like applyOrientationPref
+// for the same OEM reason.
+fun Activity.applySetupOrientation() {
+    setRequestedOrientationSafely(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+}
+
 // Cycles and persists the preference only. Callers decide how to apply it:
 // applyOrientationPref() (OS requestedOrientation) for simple UI screens, or
 // PlaybackActivity's applyContentRotation() for the actual media content --

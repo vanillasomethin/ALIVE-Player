@@ -73,12 +73,15 @@ class PairingActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Deliberately NOT applyOrientationPref(): on the Foxsky/KTC panels the OS
-        // accepts the portrait request without physically rotating and relayouts the
-        // activity into a squeezed sideways strip — the pairing code rendered one
-        // clipped character per line (seen live on the 192.168.15.215 bench TV,
-        // 2026-09-01). Stay panel-native and software-rotate the container instead,
-        // exactly like PlaybackActivity's content_rotator.
+        // Deliberately NO orientation request here — not applyOrientationPref(), and
+        // not the applySetupOrientation() that SettingsActivity uses either. On the
+        // Foxsky/KTC panels the OS accepts a portrait request without physically
+        // rotating and relayouts the activity into a squeezed sideways strip — the
+        // pairing code rendered one clipped character per line (seen live on the
+        // 192.168.15.215 bench TV, 2026-09-01). And native landscape reads sideways
+        // on a portrait-MOUNTED panel, which is where an installer actually stands.
+        // Stay panel-native and software-rotate the container to the signage
+        // orientation instead, exactly like PlaybackActivity's content_rotator.
 
         // Already fully paired — go straight to playback
         if (DevicePrefs(this).isPaired()) {
@@ -103,6 +106,15 @@ class PairingActivity : Activity() {
         }
 
         val prefs = DevicePrefs(this)
+
+        // If this screen was just removed in the admin panel (410/FCM decommission),
+        // say so — a persistent banner above the pairing card — so it doesn't look like
+        // the player crashed. Shown once, then the flag is cleared. Separate from the
+        // card()/status() UI so re-claiming below can't wipe it off screen.
+        if (prefs.wasDecommissioned()) {
+            findViewById<TextView>(R.id.decommission_banner).visibility = View.VISIBLE
+            prefs.clearDecommissioned()
+        }
 
         // If already claimed but not yet confirmed by admin, resume showing the code
         val existingToken = prefs.getDeviceToken()
