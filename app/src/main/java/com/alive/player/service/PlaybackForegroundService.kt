@@ -15,12 +15,15 @@ import android.os.PowerManager
 import com.alive.player.R
 import com.alive.player.playback.PlaybackEngine
 import com.alive.player.playback.PlaybackWatchdog
+import com.alive.player.settings.DevicePrefs
+import com.alive.player.worker.PlanFetchScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 class PlaybackForegroundService : Service() {
 
@@ -30,6 +33,7 @@ class PlaybackForegroundService : Service() {
     private lateinit var watchdog: PlaybackWatchdog
     private lateinit var wakeLock: PowerManager.WakeLock
     private var heartbeatJob: Job? = null
+    private var pushFallbackJob: Job? = null
 
     // Proves the main thread is actually turning over — if this Looper wedges (ANR)
     // the stamp freezes and the heartbeat file the IO writer relays it into goes
@@ -79,7 +83,7 @@ class PlaybackForegroundService : Service() {
         // fresh pairing screen ~90s later and resurrects playback. Pairing precedes
         // every legitimate start of this service (PlaybackActivity and BootReceiver
         // both check it), so nothing real loses its watchdog.
-        if (com.alive.player.settings.DevicePrefs(applicationContext).isPaired()) {
+        if (DevicePrefs(applicationContext).isPaired()) {
             WatchdogService.ensureRunning(applicationContext)
             mainAliveRunnable.run() // onCreate is on the main Looper: stamp now, then every period
             heartbeatJob = CoroutineScope(Dispatchers.IO).launch {
@@ -87,6 +91,45 @@ class PlaybackForegroundService : Service() {
                     ProcessHeartbeat.writeMainThreadStamp(applicationContext)
                     delay(HEARTBEAT_PERIOD_MS)
                 }
+            }
+            startPushFallbackPoll()
+        }
+    }
+
+    /**
+     * Keeps schedule changes flowing to screens that can never receive an FCM push.
+     *
+     * Some panels never complete Google device check-in: they cold-boot with no RTC
+     * battery, the vendor service stamps the firmware build date (years in the past),
+     * and GMS check-in runs ~50s into boot — inside that window — so its TLS handshake
+     * is rejected. NTP corrects the clock minutes later, far too late, and Firebase
+     * treats AUTHENTICATION_FAILED as terminal ("won't retry"), so the screen holds no
+     * token for the whole boot session. Field-confirmed on two MStar panels: check-in
+     * failed while their clock read 935 days in the past, while two sibling panels that
+     * had only soft-rebooted (clock preserved) registered normally.
+     *
+     * With no token there is no plan_updated push, so such a screen would only notice a
+     * schedule change on the periodic PlanFetchWorker — a 15-minute floor WorkManager
+     * refuses to go below, and closer to 30 minutes worst case with no flex window.
+     * Polling here, from the service that is already running for playback, closes that
+     * gap without changing the cadence healthy screens rely on.
+     *
+     * Self-disabling: the token is re-read every tick, so the moment one exists (a boot
+     * with a good clock, or check-in's 12-hourly retry succeeding) this stops issuing
+     * fetches and the push path takes over again.
+     */
+    private fun startPushFallbackPoll() {
+        pushFallbackJob = CoroutineScope(Dispatchers.IO).launch {
+            // Stagger across the fleet: a mains outage brings every screen in a store
+            // back at once, and they would otherwise poll on the same second forever.
+            delay(Random.nextLong(PUSH_FALLBACK_INTERVAL_MS))
+            while (isActive) {
+                if (DevicePrefs(applicationContext).getFcmToken() == null) {
+                    // Cheap when nothing changed: the fetch is a single conditional
+                    // request that the server answers 304 off the cached plan hash.
+                    PlanFetchScheduler.schedulePollIfIdle(applicationContext)
+                }
+                delay(PUSH_FALLBACK_INTERVAL_MS)
             }
         }
     }
@@ -110,6 +153,7 @@ class PlaybackForegroundService : Service() {
 
     override fun onDestroy() {
         mainAliveHandler.removeCallbacks(mainAliveRunnable)
+        pushFallbackJob?.cancel()
         heartbeatJob?.cancel()
         watchdog.stop()
         engine.stop()
@@ -148,6 +192,9 @@ class PlaybackForegroundService : Service() {
         private const val ACTION_STOP = "com.alive.player.action.PLAYBACK_STOP"
         private const val HEARTBEAT_PERIOD_MS = 10_000L
         private const val STAMP_PERIOD_MS = 5_000L
+
+        /** Push-fallback poll cadence — see [startPushFallbackPoll]. */
+        private const val PUSH_FALLBACK_INTERVAL_MS = 60_000L
 
         /** Stop playback without racing this service's own startup — see onStartCommand. */
         fun requestStop(context: Context) {
