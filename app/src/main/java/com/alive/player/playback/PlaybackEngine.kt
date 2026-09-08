@@ -183,6 +183,18 @@ class PlaybackEngine(private val context: Context) {
     }
 
     fun detachViews() {
+        // The preload pipeline dies with the views. Left alone (as this used to), a
+        // preload staged mid-recreate leaked its ExoPlayer — a second hardware decoder
+        // held forever on panels that can barely afford two — and preloadReady survived
+        // pointing nextPlayerView at the DESTROYED activity's surface, so the next
+        // boundary's fast path promoted a dead view: audio and slot timers ran over a
+        // black screen. releasePreload() also cancels the not-yet-fired preload runnable,
+        // so one can't fire later and stage a fresh preload against no views.
+        releasePreload()
+        // A destroyed activity's view must not be held (leak) nor consumed by the next
+        // first-frame transition (it would hide the dead view and leave the real
+        // previously-visible one up). The recreated activity's renderItem sets its own.
+        pendingOldView = null
         pvA?.player = null
         pvB?.player = null
         playerView = null
@@ -431,13 +443,24 @@ class PlaybackEngine(private val context: Context) {
         // 2s error-reload: this render IS the advance it was waiting for.
         cancelFirstFrameDeadline()
         cancelErrorReload()
-        playItem(item)
 
+        // No surface → park, BEFORE playItem() and with no timer. This guard used to sit
+        // after playItem() and re-arm scheduleAdvanceTimer(), which made a detached
+        // engine self-perpetuating: every durationMs the timer advanced to the next
+        // item, playItem() billed a COMPLETE for the one before it — invoiced plays of
+        // creatives no one could see — and markPlaybackAlive() vouched for a playback
+        // loop with no pixels behind it, hiding exactly the dead-activity state the
+        // watchdog exists to repair. Now nothing is billed, nothing ticks and liveness
+        // goes honestly stale; attachViews() replays pendingItem when a surface returns.
+        // (The item on screen when the views left gets its COMPLETE on that resume —
+        // playItem() there closes out currentItem as always.)
         if (activeView == null || iv == null || wv == null || pvA == null || pvB == null) {
             pendingItem = item
-            scheduleAdvanceTimer(item)
+            cancelAdvanceTimer()
             return
         }
+
+        playItem(item)
 
         val resolvedUri = resolvedUriFor(item)
         // Whatever the viewer currently sees — hidden once the new item is on screen.
