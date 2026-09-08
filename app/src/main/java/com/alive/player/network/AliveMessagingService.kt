@@ -1,7 +1,6 @@
 package com.alive.player.network
 
 import com.alive.player.admin.OwnerSetup
-import com.alive.player.data.DeviceDecommissioner
 import com.alive.player.settings.DevicePrefs
 import com.alive.player.worker.HeartbeatScheduler
 import com.alive.player.worker.PlanFetchScheduler
@@ -39,26 +38,54 @@ class AliveMessagingService : FirebaseMessagingService() {
      * command channel (collectNow/reboot/etc), riding on FCM instead of a separate relay.
      *   plan_updated → kick an immediate plan fetch (bypasses the 15-min wait)
      *   health_ping  → kick an immediate heartbeat/telemetry report
-     *   reboot       → restart the device now (device-owner installs only; no-ops otherwise)
-     *   decommission → this screen was deleted in the admin panel: wipe cached
-     *                  plan/media and pairing, return to the pairing screen.
-     *                  (Screens that miss the push converge via the 410 the
-     *                  device API answers on their next call.)
+     *   reboot       → restart the device now (device-owner installs only; no-ops
+     *                  otherwise) — only when the message provably arrived on this
+     *                  device's own token, see below
+     *   decommission → this screen may have been deleted in the admin panel: kick an
+     *                  immediate plan fetch and let the authenticated API answer. A
+     *                  genuinely deleted device gets the marker-carrying 410 and
+     *                  PlanFetchWorker wipes — the same converge-path screens that
+     *                  MISS the push already use — so the push is a hint, never the
+     *                  authority.
+     *
+     * Destructive commands must never execute off a broadcast: every install
+     * subscribes to the fleet topic (AliveApplication), so one server-side mistake —
+     * or one forged send — publishing decommission/reboot fleet-wide would wipe or
+     * reboot every unattended screen at once. The old guard here deny-listed the one
+     * broadcast shape it knew (`from.startsWith("/topics/")`) and missed topic
+     * *conditions* ("'x' in topics"), whose `from` is not slash-prefixed. Deny-listing
+     * an under-documented field is the bug; what replaced it:
+     *  - decommission carries no device-side authority at all any more (above), so
+     *    every broadcast shape is moot — worst case is one extra plan fetch.
+     *  - reboot, which has no server-side record to confirm against, executes only
+     *    when `from` is exactly this app's own numeric sender id — the shape of a
+     *    direct-to-token send and of nothing else FCM offers. Fails closed on null.
      */
     override fun onMessageReceived(message: RemoteMessage) {
-        // Destructive commands must arrive on this device's own token, never via a
-        // topic: every install subscribes to the fleet topic (AliveApplication), so
-        // one server-side mistake publishing decommission/reboot there would wipe or
-        // reboot the entire unattended fleet at once. The server keeps them
-        // token-only by convention (fcm.ts); this guard makes the player enforce it.
-        val fromTopic = message.from?.startsWith("/topics/") == true
         when (message.data["type"]) {
             "plan_updated" -> PlanFetchScheduler.scheduleImmediate(applicationContext)
             "health_ping"  -> HeartbeatScheduler.scheduleImmediate(applicationContext)
-            "reboot"       -> if (!fromTopic) OwnerSetup.rebootDevice(applicationContext)
-            "decommission" -> if (!fromTopic) CoroutineScope(Dispatchers.IO).launch {
-                DeviceDecommissioner.wipe(applicationContext, "decommission push — deleted in admin panel")
+            "reboot"       -> if (isFromOwnSender(message.from, ownSenderId())) {
+                OwnerSetup.rebootDevice(applicationContext)
             }
+            "decommission" -> PlanFetchScheduler.scheduleImmediate(applicationContext)
         }
     }
+
+    /** This app's own FCM sender id (the Firebase project number, from
+     *  google-services.json) — what `RemoteMessage.from` carries on a direct-to-token
+     *  send. Null (fail closed) if Firebase isn't initialised, which inside a running
+     *  FirebaseMessagingService would itself be an anomaly worth failing closed on. */
+    private fun ownSenderId(): String? =
+        runCatching { com.google.firebase.FirebaseApp.getInstance().options.gcmSenderId }.getOrNull()
 }
+
+/**
+ * True only when [from] is exactly this app's own FCM sender id — the shape of a
+ * direct-to-token send. An allow-list, deliberately: `from` is under-documented, and
+ * the previous `startsWith("/topics/")` deny-list proved the point by missing topic
+ * conditions. Every broadcast shape — "/topics/x", "'x' in topics", whatever FCM adds
+ * next — fails this check, as do null `from` and a missing sender id.
+ */
+internal fun isFromOwnSender(from: String?, ownSenderId: String?): Boolean =
+    from != null && ownSenderId != null && from == ownSenderId
