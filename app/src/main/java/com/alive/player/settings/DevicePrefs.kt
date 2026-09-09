@@ -207,7 +207,28 @@ class DevicePrefs(private val context: Context) {
 
     fun updateNeedsUserAction(): Boolean = statusPrefs.getBoolean(KEY_UPDATE_NEEDS_USER, false)
 
+    /** Records that [versionCode] failed to install deterministically (see
+     *  UpdateInstaller.isPermanentInstallFailure) and must never be auto-committed
+     *  again. Scoped to the version rather than a bare boolean for two reasons:
+     *  it self-invalidates the moment a different build is published — no explicit
+     *  clearing, so the fleet resumes silent updates on the next good version with
+     *  no human in the loop — and, unlike KEY_UPDATE_NEEDS_USER, it deliberately
+     *  SURVIVES clearUpdateReady(). That is the whole point: a single update-check
+     *  returning null (a blank 200 parses to null just as a genuine rollback does)
+     *  used to wipe the needs-user flag, and the very next check re-downloaded and
+     *  re-committed the same doomed APK. The poison has to outlive that. */
+    fun markVersionPermanentlyFailed(versionCode: Int) {
+        if (versionCode <= 0) return // -1 = nothing ready; never poison the sentinel
+        statusPrefs.edit().putInt(KEY_UPDATE_FAILED_VC, versionCode).apply()
+    }
+
+    fun isVersionPermanentlyFailed(versionCode: Int): Boolean =
+        versionCode > 0 && statusPrefs.getInt(KEY_UPDATE_FAILED_VC, -1) == versionCode
+
     fun clearUpdateReady() {
+        // KEY_UPDATE_FAILED_VC is intentionally NOT cleared here — see
+        // markVersionPermanentlyFailed. It is version-scoped, so leaving it costs
+        // nothing once a newer build ships.
         statusPrefs.edit()
             .remove(KEY_UPDATE_READY_VC)
             .remove(KEY_UPDATE_READY_NAME)
@@ -311,6 +332,7 @@ class DevicePrefs(private val context: Context) {
         private const val KEY_UPDATE_READY_NAME      = "update_ready_version_name"
         private const val KEY_UPDATE_READY_APK       = "update_ready_apk_path"
         private const val KEY_UPDATE_NEEDS_USER      = "update_needs_user_action"
+        private const val KEY_UPDATE_FAILED_VC       = "update_permanently_failed_vc"
         private const val KEY_UPDATE_SESSION_ID      = "update_install_session_id"
         private const val KEY_LAST_STALL             = "diag_last_stall"
         private const val KEY_LAST_STALL_MS          = "diag_last_stall_ms"

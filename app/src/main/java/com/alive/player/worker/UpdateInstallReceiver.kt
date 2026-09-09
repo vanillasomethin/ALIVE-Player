@@ -63,22 +63,39 @@ class UpdateInstallReceiver : BroadcastReceiver() {
                 prefs.markUpdateNeedsUserAction()
             }
 
-            // Deterministic failures (see isPermanentInstallFailure): the same
-            // build fails the same way on every retry, so left in the retryable
-            // bucket a silent-capable device would re-commit it every periodic
-            // check, forever. Marking needs-user-action poisons THIS versionCode
-            // only — setUpdateReady clears the flag the moment a different version
-            // is published, so the fleet resumes silent updates on the next good
-            // build with no human in the loop.
-            else -> if (UpdateInstaller.isPermanentInstallFailure(status)) {
-                prefs.markUpdateNeedsUserAction()
-                // Surface it: this state is otherwise invisible until someone
-                // wonders why a screen is stuck on an old version. Rides the
-                // existing incident channel (next heartbeat). goAsync: onReceive
-                // is main-thread and Room (rightly) refuses main-thread writes.
-                // runCatching: crash-logging must never itself crash a kiosk
-                // (disk-full is routine on these boxes); the poison flag above is
-                // already set synchronously either way.
+            else -> {
+                // The coarse public status alone cannot tell a signature mismatch
+                // (CONFLICT) from a duplicate-provider clash, nor a temporary admin
+                // restriction (INCOMPATIBLE) from a wrong-ABI build. The legacy code
+                // behind it can, so pass it through where the platform supplies one.
+                val legacyStatus = intent.getIntExtra(
+                    UpdateInstaller.EXTRA_LEGACY_STATUS,
+                    UpdateInstaller.LEGACY_STATUS_ABSENT,
+                )
+                val permanent = UpdateInstaller.isPermanentInstallFailure(status, legacyStatus)
+                val readyVersionCode = prefs.getUpdateReadyVersionCode()
+
+                if (permanent) {
+                    // Deterministic: the same APK fails the same way every retry, so
+                    // left retryable a silent-capable device re-streams and re-commits
+                    // it every periodic check, forever. Two flags, deliberately:
+                    // needsUserAction so Settings offers the manual install, and the
+                    // version-scoped poison which — unlike needsUserAction — survives
+                    // a clearUpdateReady() triggered by one null update-check.
+                    prefs.markUpdateNeedsUserAction()
+                    prefs.markVersionPermanentlyFailed(readyVersionCode)
+                }
+
+                // Record EVERY install failure, not just the deterministic ones. A
+                // screen retrying a transient failure every period for weeks is just
+                // as stuck as one that gave up, and used to be equally invisible —
+                // the incident only existed on the permanent branch, so the silent
+                // forever-loop this bug is about produced no telemetry at all. The
+                // permanent flag distinguishes "gave up, needs a new build" from
+                // "still trying". goAsync: onReceive is main-thread and Room
+                // (rightly) refuses main-thread writes. runCatching: crash-logging
+                // must never itself crash a kiosk (disk-full is routine on these
+                // boxes); the flags above are already set synchronously either way.
                 val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
                 val pending = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
@@ -86,12 +103,27 @@ class UpdateInstallReceiver : BroadcastReceiver() {
                         runCatching {
                             AppDatabase.get(context).incidentDao().insert(
                                 Incident(
-                                    type = "UPDATE_INSTALL_PERMANENT_FAILURE",
+                                    type = if (permanent) {
+                                        "UPDATE_INSTALL_PERMANENT_FAILURE"
+                                    } else {
+                                        "UPDATE_INSTALL_RETRYABLE_FAILURE"
+                                    },
                                     timestampUtcEpochMs = System.currentTimeMillis(),
                                     metadataJson = JSONObject()
                                         .put("status", status)
+                                        // Sentinel means the platform sent no legacy
+                                        // code; report absence as null, not MIN_VALUE.
+                                        .put(
+                                            "legacyStatus",
+                                            if (legacyStatus == UpdateInstaller.LEGACY_STATUS_ABSENT) {
+                                                JSONObject.NULL
+                                            } else {
+                                                legacyStatus
+                                            },
+                                        )
+                                        .put("permanent", permanent)
                                         .put("message", message ?: JSONObject.NULL)
-                                        .put("readyVersionCode", prefs.getUpdateReadyVersionCode())
+                                        .put("readyVersionCode", readyVersionCode)
                                         .toString(),
                                 )
                             )
@@ -100,12 +132,6 @@ class UpdateInstallReceiver : BroadcastReceiver() {
                         pending.finish()
                     }
                 }
-            } else {
-                // Remaining STATUS_FAILURE_*: keep ready-state; the next periodic
-                // check re-verifies the download (cached, cheap) and retries the
-                // commit at most once per period — still never visible over
-                // playback. These can genuinely clear on their own (storage freed,
-                // restriction lifted), so they stay retryable.
             }
         }
     }
