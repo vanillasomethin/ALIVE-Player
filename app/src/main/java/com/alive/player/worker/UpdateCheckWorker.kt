@@ -73,9 +73,16 @@ class UpdateCheckWorker(
                 //  - with an operator present in Settings (UpdateGate) to see it through.
                 // needsUserAction stops silent-looking devices that already proved
                 // otherwise (a commit came back PENDING) from re-committing 4x/day.
+                // isVersionPermanentlyFailed is the durable half of that: this exact
+                // versionCode already failed deterministically (wrong signing key,
+                // wrong ABI), so auto-committing it again can only fail again. It is
+                // checked separately because needsUserAction is wiped by
+                // clearUpdateReady(), which one null update-check is enough to
+                // trigger — and that is precisely how the forever-loop survived.
                 val canAuto = UpdateInstaller.canInstallSilently(applicationContext) &&
                     UpdateInstaller.canRelaunchUiAfterInstall(applicationContext) &&
-                    !prefs.updateNeedsUserAction()
+                    !prefs.updateNeedsUserAction() &&
+                    !prefs.isVersionPermanentlyFailed(update.versionCode)
                 // operatorRequested is intent, not presence: only the non-silent path
                 // with the gate open means "a human asked for the confirm dialog".
                 // A silent commit stays operatorRequested=false even if someone is

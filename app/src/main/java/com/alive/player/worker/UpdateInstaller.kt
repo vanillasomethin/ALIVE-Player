@@ -194,14 +194,66 @@ object UpdateInstaller {
         !operatorRequested && sessionCommitted && nowMs - sessionCreatedMs < IN_FLIGHT_WINDOW_MS
 
     /**
-     * Whether a PackageInstaller failure status is deterministic — the same build
-     * will fail the same way on every retry, so re-committing it is a forever-loop,
-     * not persistence. INVALID is a malformed APK; INCOMPATIBLE is a signature
-     * mismatch (exactly what a signing-scheme migration produces fleet-wide).
-     * Everything else (generic FAILURE, BLOCKED, CONFLICT, STORAGE) can genuinely
-     * clear on its own — storage freed, restriction lifted — and stays retryable.
+     * Intent extra carrying the precise INSTALL_FAILED_* code behind the coarse
+     * public status. PackageInstaller.EXTRA_LEGACY_STATUS is @hide, so the key is
+     * spelled out — reading an extra by name off an Intent the platform sent us is
+     * an ordinary Bundle lookup, not a hidden-API access, and the name has been
+     * stable since API 21. Absent (or on an OEM that omits it) we fall back to the
+     * public status alone, which is why [LEGACY_STATUS_ABSENT] must be a value no
+     * real code uses — every INSTALL_FAILED_* is negative and small.
      */
-    internal fun isPermanentInstallFailure(status: Int): Boolean =
-        status == PackageInstaller.STATUS_FAILURE_INVALID ||
+    internal const val EXTRA_LEGACY_STATUS = "android.content.pm.extra.LEGACY_STATUS"
+    internal const val LEGACY_STATUS_ABSENT = Int.MIN_VALUE
+
+    /**
+     * PackageManager.INSTALL_FAILED_USER_RESTRICTED (@hide, = -111). The one member
+     * of the INCOMPATIBLE bucket that is genuinely temporary: an admin restriction
+     * on installing packages, which lifts when policy changes.
+     */
+    internal const val INSTALL_FAILED_USER_RESTRICTED = -111
+
+    /**
+     * Whether a PackageInstaller failure is deterministic — the same APK will fail
+     * the same way on every retry, so re-committing it is a forever-loop, not
+     * persistence.
+     *
+     * The buckets come from PackageManager.installStatusToPublicStatus(), which is
+     * where the coarse STATUS_FAILURE_* a status broadcast carries is derived from
+     * the real INSTALL_FAILED_* code:
+     *
+     *  - CONFLICT     ← UPDATE_INCOMPATIBLE (**signature mismatch on update**),
+     *                   ALREADY_EXISTS, DUPLICATE_PACKAGE, SHARED_USER_INCOMPATIBLE,
+     *                   DUPLICATE_PERMISSION, CONFLICTING_PROVIDER
+     *  - INVALID      ← malformed/unparseable APK, TEST_ONLY, VERSION_DOWNGRADE,
+     *                   BAD_SIGNATURE, every PARSE_FAILED_*
+     *  - INCOMPATIBLE ← OLDER_SDK, NEWER_SDK, CPU_ABI_INCOMPATIBLE, MISSING_FEATURE,
+     *                   NO_MATCHING_ABIS, MISSING_SPLIT — device capability — plus
+     *                   the one exception carved out below
+     *
+     * This used to read INCOMPATIBLE as the signature-mismatch case and leave
+     * CONFLICT retryable. That is backwards, and it mattered: an APK signed with the
+     * wrong key — the canonical never-installable build for a self-updating kiosk,
+     * and exactly what a signing-key migration produces fleet-wide — comes back
+     * CONFLICT. It was therefore re-streamed and re-committed every period forever,
+     * silently, because the incident is only recorded on the permanent branch.
+     *
+     * Retryable, deliberately: STORAGE (space frees up), generic FAILURE (internal
+     * error), BLOCKED (policy/verifier), ABORTED (its own branch upstream — an
+     * operator pressing Cancel, not a defect).
+     */
+    internal fun isPermanentInstallFailure(
+        status: Int,
+        legacyStatus: Int = LEGACY_STATUS_ABSENT,
+    ): Boolean {
+        // Carve-out, and the reason the legacy code is worth reading at all:
+        // USER_RESTRICTED is mapped into INCOMPATIBLE alongside genuinely permanent
+        // device-capability failures, but it clears the moment the restriction is
+        // lifted. Poisoning on it would strand a panel on an old build over a
+        // temporary policy state — the opposite mistake, and one the durable
+        // version-scoped poison would otherwise make permanent.
+        if (legacyStatus == INSTALL_FAILED_USER_RESTRICTED) return false
+        return status == PackageInstaller.STATUS_FAILURE_INVALID ||
+            status == PackageInstaller.STATUS_FAILURE_CONFLICT ||
             status == PackageInstaller.STATUS_FAILURE_INCOMPATIBLE
+    }
 }
