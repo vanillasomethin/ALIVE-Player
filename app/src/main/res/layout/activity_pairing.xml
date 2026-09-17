@@ -272,9 +272,15 @@
                     android:letterSpacing="0.22"
                     android:layout_marginBottom="12dp" />
 
+                <!-- match_parent + platform autosize (API 26+, and minSdk is 26): at
+                     52sp with 0.15 letter-spacing a 6-char code measures ~240px, but
+                     the rotated card only offers ~209px on a 1280x720 panel, so a
+                     wrap_content TextView clipped it mid-code ("B56…") — an unpairable
+                     screen. Autosizing shrinks the code to whatever the card can show
+                     rather than truncating it, on any panel size. -->
                 <TextView
                     android:id="@+id/pairing_code_value"
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="——"
                     android:textColor="@color/alive_white"
@@ -283,7 +289,11 @@
                     android:fontFamily="@font/poppins_bold"
                     android:letterSpacing="0.15"
                     android:maxLines="1"
-                    android:singleLine="true"
+                    android:gravity="center"
+                    android:autoSizeTextType="uniform"
+                    android:autoSizeMinTextSize="20sp"
+                    android:autoSizeMaxTextSize="52sp"
+                    android:autoSizeStepGranularity="2sp"
                     android:layout_marginBottom="8dp" />
 
                 <TextView
