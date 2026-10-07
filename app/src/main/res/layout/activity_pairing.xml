@@ -152,6 +152,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:id="@+id/step_note_code"
                         android:text="Note the screen code shown on the right"
                         android:textColor="@color/alive_white"
                         android:textSize="14sp"
@@ -207,6 +208,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:id="@+id/step_enter_code"
                         android:text="Enter the code — or scan the QR code shown on the right"
                         android:textColor="@color/alive_muted"
                         android:textSize="14sp"
@@ -272,12 +274,16 @@
                     android:letterSpacing="0.22"
                     android:layout_marginBottom="12dp" />
 
-                <!-- match_parent + platform autosize (API 26+, and minSdk is 26): at
-                     52sp with 0.15 letter-spacing a 6-char code measures ~240px, but
-                     the rotated card only offers ~209px on a 1280x720 panel, so a
-                     wrap_content TextView clipped it mid-code ("B56…") — an unpairable
-                     screen. Autosizing shrinks the code to whatever the card can show
-                     rather than truncating it, on any panel size. -->
+                <!-- A 6-char code at 52sp with 0.15 letter-spacing measures ~240px.
+                     match_parent + platform autosize (API 26+, minSdk is 26) is a
+                     LAST-DITCH net only: measured on a portrait panel 2026-10-07 the
+                     card offers ~183px, below even the 20sp floor, so the code clamps
+                     and clips anyway ("B806" for B806CC) — and a code too small to
+                     read from the doorway is no more pairable than a clipped one.
+                     What actually keeps the code whole is the card getting the full
+                     width on narrow panels: PairingActivity.stackPairingContentIfNarrow.
+                     Keep textSize as the real size — autosize only bites if a panel is
+                     narrower still. -->
                 <TextView
                     android:id="@+id/pairing_code_value"
                     android:layout_width="match_parent"

@@ -90,7 +90,7 @@ class PairingActivity : Activity() {
         }
 
         setContentView(R.layout.activity_pairing)
-        applyContentRotationTo(findViewById(R.id.pairing_rotator))
+        stackPairingContentIfNarrow(applyContentRotationTo(findViewById(R.id.pairing_rotator)))
 
         // "Seen." in brand red
         val headline = SpannableStringBuilder("Seen.\nRemembered.\nBought.")
@@ -127,6 +127,57 @@ class PairingActivity : Activity() {
 
         // First boot — auto-claim
         autoClaim(prefs)
+    }
+
+    /**
+     * The pairing screen is a two-column LANDSCAPE design: instructions on the left,
+     * code card on the right at layout_weight 45. Portrait signage software-rotates
+     * the container, so it lays out across the panel's SHORT side and that 45% column
+     * collapses -- on a 1280x720 standee it leaves the code about 183px, while six
+     * characters at the designed 52sp with 0.15 letter-spacing measure about 240px.
+     * The last two characters are then simply cut off, with no ellipsis to show it:
+     * "B806CC" reads as a perfectly plausible "B806", so the installer types a code
+     * that cannot pair and the panel gives them nothing to go on. Confirmed on a
+     * portrait panel 2026-10-07.
+     *
+     * Autosizing was tried for exactly this (#74) and does not rescue it. The floor
+     * that keeps a code readable from across a shop is still wider than the collapsed
+     * column, so the text clamps at its minimum and clips regardless -- a code nobody
+     * can read from the doorway is no more pairable than one that is cut in half.
+     *
+     * So stop squeezing it. Below the width the two-column layout actually needs,
+     * stack the columns so the card spans the full width; the code then renders at
+     * its designed size on precisely the panels where it was unreadable. Wide panels
+     * are untouched and keep the side-by-side design.
+     */
+    private fun stackPairingContentIfNarrow(contentWidthPx: Int) {
+        if (contentWidthPx / resources.displayMetrics.density >= TWO_COLUMN_MIN_WIDTH_DP) return
+
+        val row = findViewById<LinearLayout>(R.id.main_content)
+        if (row.orientation == LinearLayout.VERTICAL) return
+        row.orientation = LinearLayout.VERTICAL
+
+        val gap = (STACKED_GAP_DP * resources.displayMetrics.density).toInt()
+        for (i in 0 until row.childCount) {
+            val child = row.getChildAt(i)
+            // The columns are 0dp + weight, which is a width of zero once the row is
+            // vertical -- they must take the full width and drop the weight instead.
+            (child.layoutParams as LinearLayout.LayoutParams).apply {
+                width = LinearLayout.LayoutParams.MATCH_PARENT
+                weight = 0f
+                topMargin = if (i == 0) topMargin else gap
+            }
+            // paddingEnd held the two columns apart side by side; stacked, that gap
+            // would just narrow the card for no reason.
+            child.setPaddingRelative(child.paddingStart, child.paddingTop, 0, child.paddingBottom)
+        }
+        // The instructions point at a card that is no longer to the right of them.
+        findViewById<TextView>(R.id.step_note_code).text =
+            "Note the screen code shown below"
+        findViewById<TextView>(R.id.step_enter_code).text =
+            "Enter the code \u2014 or scan the QR code shown below"
+
+        row.requestLayout()
     }
 
     private fun autoClaim(prefs: DevicePrefs) {
@@ -292,5 +343,11 @@ class PairingActivity : Activity() {
 
     companion object {
         private const val POLL_INTERVAL_MS = 5_000L
+
+        // Six characters at 52sp with 0.15 letter-spacing measure ~218sp. The card is
+        // weight 45 of the row, inside 48dp of rotator padding and 36dp of its own, so
+        // the side-by-side layout stops fitting the code below roughly this width.
+        private const val TWO_COLUMN_MIN_WIDTH_DP = 740f
+        private const val STACKED_GAP_DP = 24
     }
 }
