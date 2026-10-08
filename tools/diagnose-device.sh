@@ -5,7 +5,9 @@
 # session. Read docs/instability-audit.md for how each section maps to a failure category.
 set -uo pipefail
 
-PKG="com.alive.player"
+# Install package name (applicationId), NOT the Kotlin namespace com.alive.player —
+# dumpsys/am take the installed package, and the namespace returns nothing at all.
+PKG="in.wearealive.player"
 OUT="alive-diagnosis-$(date +%Y%m%d-%H%M%S)"
 
 if ! command -v adb >/dev/null; then
