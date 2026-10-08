@@ -27,8 +27,13 @@ fun Activity.applyOrientationPref() {
  * [container] must sit centered in a full-screen parent (layout_gravity="center"):
  * rotation pivots about the view centre, and a quarter turn swaps width/height so
  * the rotated bounding box covers the panel.
+ *
+ * Returns the width in px the container is laid out at. A quarter turn swaps the
+ * axes, so portrait signage lays its content across the panel's SHORT side -- a
+ * caller whose layout only fits on the long side needs to know that (see
+ * PairingActivity.stackPairingContentIfNarrow).
  */
-fun Activity.applyContentRotationTo(container: View) {
+fun Activity.applyContentRotationTo(container: View): Int {
     val isLandscapeNow = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val rotation = when (DevicePrefs(this).getOrientationMode()) {
         DevicePrefs.ORIENTATION_PORTRAIT         -> if (isLandscapeNow) 90f  else 0f
@@ -42,12 +47,17 @@ fun Activity.applyContentRotationTo(container: View) {
     val wantW = if (quarterTurn) resources.displayMetrics.heightPixels else ViewGroup.LayoutParams.MATCH_PARENT
     val wantH = if (quarterTurn) resources.displayMetrics.widthPixels  else ViewGroup.LayoutParams.MATCH_PARENT
 
-    if (container.rotation == rotation && lp.width == wantW && lp.height == wantH) return
+    val contentWidthPx =
+        if (quarterTurn) resources.displayMetrics.heightPixels
+        else resources.displayMetrics.widthPixels
+
+    if (container.rotation == rotation && lp.width == wantW && lp.height == wantH) return contentWidthPx
 
     container.rotation = rotation
     lp.width  = wantW
     lp.height = wantH
     container.layoutParams = lp
+    return contentWidthPx
 }
 
 // Operator screens (settings) must be readable on the panel AS IT PHYSICALLY IS.
