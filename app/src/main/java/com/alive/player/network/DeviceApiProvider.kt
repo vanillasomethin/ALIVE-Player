@@ -91,6 +91,7 @@ class DeviceApiProvider(
             // notModified short-circuit below).
             val orientation = root.optString("orientation", null)
             val soundAdMuted = root.optBoolean("soundAdMuted", false)
+            val preferredRendition = root.optString("preferredRendition", null)
             val config = root.optJSONObject("config")?.let {
                 PlayerConfig(
                     retryIntervalMs = if (it.has("retryIntervalMs")) it.getLong("retryIntervalMs") else null,
@@ -111,6 +112,7 @@ class DeviceApiProvider(
                     orientation = orientation,
                     config = config,
                     soundAdMuted = soundAdMuted,
+                    preferredRendition = preferredRendition,
                 )
             }
             fun parseItems(arr: JSONArray) = (0 until arr.length()).map { i ->
@@ -125,6 +127,8 @@ class DeviceApiProvider(
                     order = o.getInt("order"),
                     hevcUrl = o.optString("hevcUrl", null),
                     hevcMd5 = o.optString("hevcMd5", null),
+                    baselineUrl = o.optString("baselineUrl", null),
+                    baselineMd5 = o.optString("baselineMd5", null),
                 )
             }
             val items = parseItems(root.optJSONArray("items") ?: JSONArray())
@@ -152,6 +156,7 @@ class DeviceApiProvider(
                 config = config,
                 fallbackItems = fallbackItems,
                 soundAdMuted = soundAdMuted,
+                preferredRendition = preferredRendition,
             )
         } finally {
             conn.disconnect()
