@@ -362,7 +362,7 @@ class PlaybackEngine(private val context: Context) {
             FetchStatus.FETCHING.name    -> "Fetching schedule…"
             FetchStatus.NO_SCHEDULE.name -> "No schedule assigned\n${status.message}$countdown"
             FetchStatus.ERROR.name       -> "Fetch error: ${status.message}$countdown"
-            FetchStatus.OK.name          -> "Schedule loaded — waiting for content$countdown"
+            FetchStatus.OK.name          -> "Schedule loaded, waiting for content$countdown"
             FetchStatus.NO_CONTENT.name  -> "${status.message}$countdown"
             null                         -> "Waiting for schedule…$countdown"
             else                         -> "Waiting…$countdown"

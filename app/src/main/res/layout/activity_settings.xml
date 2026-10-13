@@ -114,7 +114,7 @@
                     android:id="@+id/tv_device_id"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="—"
+                    android:text="-"
                     android:textColor="@color/alive_white"
                     android:textSize="14sp"
                     android:fontFamily="@font/poppins_regular" />
@@ -147,7 +147,7 @@
                     android:id="@+id/tv_paired_at"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="—"
+                    android:text="-"
                     android:textColor="@color/alive_white"
                     android:textSize="14sp"
                     android:fontFamily="@font/poppins_regular" />
@@ -180,7 +180,7 @@
                     android:id="@+id/tv_last_plan"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="—"
+                    android:text="-"
                     android:textColor="@color/alive_white"
                     android:textSize="14sp"
                     android:fontFamily="@font/poppins_regular" />
@@ -213,7 +213,7 @@
                     android:id="@+id/tv_app_version"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="—"
+                    android:text="-"
                     android:textColor="@color/alive_white"
                     android:textSize="14sp"
                     android:fontFamily="@font/poppins_regular" />
@@ -251,7 +251,7 @@
                     android:id="@+id/tv_update_status"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="—"
+                    android:text="-"
                     android:textColor="@color/alive_white"
                     android:textSize="14sp"
                     android:fontFamily="@font/poppins_regular"
@@ -298,7 +298,7 @@
                     android:id="@+id/tv_network_status"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="—"
+                    android:text="-"
                     android:textColor="@color/alive_white"
                     android:textSize="14sp"
                     android:fontFamily="@font/poppins_regular" />
@@ -370,7 +370,7 @@
                     android:id="@+id/tv_storage"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="—"
+                    android:text="-"
                     android:textColor="@color/alive_white"
                     android:textSize="14sp"
                     android:fontFamily="@font/poppins_regular" />
@@ -403,7 +403,7 @@
                     android:id="@+id/tv_pending_uploads"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="—"
+                    android:text="-"
                     android:textColor="@color/alive_white"
                     android:textSize="14sp"
                     android:fontFamily="@font/poppins_regular" />

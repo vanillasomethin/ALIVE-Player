@@ -35,13 +35,13 @@ class SettingsFragment : Fragment() {
         val prefs = DevicePrefs(activity.applicationContext)
 
         view.findViewById<TextView>(R.id.tv_device_id).text =
-            prefs.getDeviceId() ?: "—"
+            prefs.getDeviceId() ?: "-"
 
         view.findViewById<TextView>(R.id.tv_paired_at).text =
-            prefs.getPairedAt()?.let { relativeTime(it) } ?: "—"
+            prefs.getPairedAt()?.let { relativeTime(it) } ?: "-"
 
         view.findViewById<TextView>(R.id.tv_app_version).text =
-            activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "—"
+            activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "-"
 
         view.findViewById<Button>(R.id.reset_button).setOnClickListener { confirmReset() }
         view.findViewById<Button>(R.id.clear_cache_button).setOnClickListener { confirmClearCache() }
@@ -92,7 +92,7 @@ class SettingsFragment : Fragment() {
 
             withContext(Dispatchers.Main) {
                 view.findViewById<TextView>(R.id.tv_last_plan).text =
-                    cache?.fetchedAtEpochMs?.let { relativeTime(it) } ?: "—"
+                    cache?.fetchedAtEpochMs?.let { relativeTime(it) } ?: "-"
                 view.findViewById<TextView>(R.id.tv_pending_uploads).text =
                     "$pending event${if (pending == 1) "" else "s"} queued"
                 view.findViewById<TextView>(R.id.tv_storage).text =

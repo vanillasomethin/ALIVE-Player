@@ -136,7 +136,7 @@ class PlanFetchWorker(
                 // as the plan stays empty, instead of pointing at the admin panel.
                 result.notModified && existing != null && planJsonHasNothingToPlay(existing.planJson) ->
                     prefs.setFetchStatus(FetchStatus.NO_SCHEDULE.also {
-                        it.message = "No schedule assigned — go to wearealive.in/admin"
+                        it.message = "No schedule assigned: go to wearealive.in/admin"
                     })
                 result.notModified ->
                     prefs.setFetchStatus(FetchStatus.OK.also {
@@ -152,7 +152,7 @@ class PlanFetchWorker(
                 // played its loop — see PlaybackEngine, which plays fallbackItems too.
                 result.items.isEmpty() && result.fallbackItems.isEmpty() ->
                     prefs.setFetchStatus(FetchStatus.NO_SCHEDULE.also {
-                        it.message = "No schedule assigned — go to wearealive.in/admin"
+                        it.message = "No schedule assigned: go to wearealive.in/admin"
                     })
                 // Fallback-only: slot mode (or the admin fallback playlist). Named
                 // distinctly so ops can tell it apart from a scheduled screen at a glance.
@@ -198,12 +198,12 @@ class PlanFetchWorker(
             probe?.looksIntercepted == true ->
                 "This network is blocking the screen" +
                     (probe.via?.let { " (proxy: ${it.take(40)})" } ?: "") +
-                    " — allow wearealive.in on the router"
+                    ", allow wearealive.in on the router"
 
             NtpSyncManager.isClockBadlyWrong(applicationContext) ->
-                "Device date/time is wrong — correct it in TV settings to restore playback"
+                "Device date/time is wrong, correct it in TV settings to restore playback"
 
-            else -> "Secure connection rejected — " +
+            else -> "Secure connection rejected: " +
                 (ex.message?.take(80) ?: "server certificate not trusted")
         }
     }

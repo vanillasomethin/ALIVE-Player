@@ -209,7 +209,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:id="@+id/step_enter_code"
-                        android:text="Enter the code — or scan the QR code shown on the right"
+                        android:text="Enter the code, or scan the QR code shown on the right"
                         android:textColor="@color/alive_muted"
                         android:textSize="14sp"
                         android:fontFamily="@font/poppins_regular" />
@@ -288,7 +288,7 @@
                     android:id="@+id/pairing_code_value"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="——"
+                    android:text="--"
                     android:textColor="@color/alive_white"
                     android:textSize="52sp"
                     android:textStyle="bold"
@@ -305,7 +305,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Option A — enter this code in admin → Pair screen"
+                    android:text="Option A: enter this code in admin → Pair screen"
                     android:textColor="@color/alive_muted"
                     android:textSize="12sp"
                     android:fontFamily="@font/poppins_regular"
@@ -334,7 +334,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Option B — scan with your phone to connect automatically"
+                    android:text="Option B: scan with your phone to connect automatically"
                     android:textColor="@color/alive_muted"
                     android:textSize="12sp"
                     android:fontFamily="@font/poppins_regular"

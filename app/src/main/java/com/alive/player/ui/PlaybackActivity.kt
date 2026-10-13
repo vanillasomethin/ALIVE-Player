@@ -522,7 +522,7 @@ class PlaybackActivity : Activity() {
                             waitingProgress.visibility = View.GONE
                             statusIcon.apply { visibility = View.VISIBLE; text = "↓"; setTextColor(Color.parseColor("#60a5fa")) }
                             waitingStatus.text = "Downloading $done of $total ($pct%)"
-                            showDetail("Please wait — content will play when ready$sizeStr")
+                            showDetail("Please wait, content will play when ready$sizeStr")
                             downloadProgress.apply { visibility = View.VISIBLE; max = total; progress = done }
                             retryButton.visibility = View.GONE
                         } else {
@@ -541,7 +541,7 @@ class PlaybackActivity : Activity() {
                                 text = if (engineReason != null) "⚠" else "✓"
                                 setTextColor(Color.parseColor(if (engineReason != null) "#f59e0b" else "#22c55e"))
                             }
-                            waitingStatus.text = engineReason ?: "Schedule synced — starting soon"
+                            waitingStatus.text = engineReason ?: "Schedule synced, starting soon"
                             if (engineReason != null) {
                                 showDetail("Check the schedule's date range and daily hours in admin")
                                 retryButton.visibility = View.VISIBLE
@@ -597,11 +597,11 @@ class PlaybackActivity : Activity() {
         CoroutineScope(Dispatchers.IO).launch {
             val prefs       = DevicePrefs(applicationContext)
             val db          = AppDatabase.get(applicationContext)
-            val deviceId    = prefs.getDeviceId() ?: "—"
+            val deviceId    = prefs.getDeviceId() ?: "-"
             val ip          = getLocalIpAddress()
             val version     = BuildConfig.VERSION_NAME
             val fetchStatus = prefs.getFetchStatus()
-            val lastFetch   = if (fetchStatus != null && fetchStatus.timeMs > 0) relativeTime(fetchStatus.timeMs) else "—"
+            val lastFetch   = if (fetchStatus != null && fetchStatus.timeMs > 0) relativeTime(fetchStatus.timeMs) else "-"
             val cacheDir    = applicationContext.getExternalFilesDir("cache") ?: applicationContext.cacheDir
             val cacheMb     = dirSizeBytes(cacheDir) / 1024 / 1024
             val freeMb      = android.os.StatFs(cacheDir.path).availableBytes / 1024 / 1024
@@ -625,7 +625,7 @@ class PlaybackActivity : Activity() {
                 ?.flatMap { it.inetAddresses.toList() }
                 ?.firstOrNull { !it.isLoopbackAddress && it is Inet4Address }
                 ?.hostAddress
-        }.getOrNull() ?: "—"
+        }.getOrNull() ?: "-"
 
     private fun dirSizeBytes(dir: File): Long =
         dir.walkTopDown().sumOf { if (it.isFile) it.length() else 0L }
