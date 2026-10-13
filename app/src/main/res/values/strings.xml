@@ -9,7 +9,7 @@
     <string name="settings_paired_at">Paired at</string>
     <string name="settings_last_plan">Last plan fetch</string>
     <string name="settings_app_version">App version</string>
-    <string name="settings_not_available">—</string>
+    <string name="settings_not_available">-</string>
     <string name="settings_reset_button">Reset device</string>
     <string name="settings_reset_confirm_title">Reset device?</string>
     <string name="settings_reset_confirm_message">This will unpair the device and clear all local data.</string>
