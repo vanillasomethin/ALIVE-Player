@@ -92,6 +92,7 @@ class DeviceApiProvider(
             val orientation = root.optString("orientation", null)
             val soundAdMuted = root.optBoolean("soundAdMuted", false)
             val preferredRendition = root.optString("preferredRendition", null)
+            val offerRailJson = root.optJSONObject("offerRail")?.toString()
             val config = root.optJSONObject("config")?.let {
                 PlayerConfig(
                     retryIntervalMs = if (it.has("retryIntervalMs")) it.getLong("retryIntervalMs") else null,
@@ -113,6 +114,7 @@ class DeviceApiProvider(
                     config = config,
                     soundAdMuted = soundAdMuted,
                     preferredRendition = preferredRendition,
+                    offerRailJson = offerRailJson,
                 )
             }
             fun parseItems(arr: JSONArray) = (0 until arr.length()).map { i ->
@@ -157,6 +159,7 @@ class DeviceApiProvider(
                 fallbackItems = fallbackItems,
                 soundAdMuted = soundAdMuted,
                 preferredRendition = preferredRendition,
+                    offerRailJson = offerRailJson,
             )
         } finally {
             conn.disconnect()

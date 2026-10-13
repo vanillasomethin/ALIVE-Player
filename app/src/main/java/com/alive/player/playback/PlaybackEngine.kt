@@ -112,6 +112,12 @@ class PlaybackEngine(private val context: Context) {
     /** Called when the engine begins rendering content. */
     var onPlaying: (() -> Unit)? = null
 
+    /** Called as each item starts, with that item (the offer rail decides per item). */
+    var onItemStarted: ((PlanItem) -> Unit)? = null
+
+    /** The item on screen now, for a view that binds mid-item (see PlaybackActivity). */
+    fun currentPlanItem(): PlanItem? = currentItem
+
     /**
      * True while the engine is idle waiting for content (no plan, or no items for the
      * current slot); false while it is rendering. This is the state pollers must consult
@@ -1215,6 +1221,7 @@ class PlaybackEngine(private val context: Context) {
         currentItem?.let { emitCompleteEvent(it, now) }
         currentItem = item
         playStartMs = now
+        mainHandler.post { onItemStarted?.invoke(item) }
         // No PLAY_START event — only emit on completion
     }
 
