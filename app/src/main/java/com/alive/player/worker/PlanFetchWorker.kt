@@ -77,6 +77,7 @@ class PlanFetchWorker(
                 cfg.downloadReadTimeoutMs?.let { prefs.setDownloadReadTimeoutMs(it) }
             }
             prefs.setSoundAdMuted(result.soundAdMuted)
+            prefs.setOfferRail(result.offerRailJson)
 
             if (!result.notModified && result.rawJson != null) {
                 dao.upsert(

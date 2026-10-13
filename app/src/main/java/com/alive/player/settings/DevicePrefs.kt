@@ -166,6 +166,11 @@ class DevicePrefs(private val context: Context) {
     fun setSoundAdMuted(muted: Boolean) { statusPrefs.edit().putBoolean(KEY_SOUND_AD_MUTED, muted).apply() }
     fun getSoundAdMuted(): Boolean = statusPrefs.getBoolean(KEY_SOUND_AD_MUTED, false)
 
+    // The store's offer rail (studio Store.offerRail), raw JSON or null for none. Written on
+    // every plan poll like soundAdMuted; read by OfferRail at each item boundary.
+    fun setOfferRail(json: String?) { statusPrefs.edit().putString(KEY_OFFER_RAIL, json).apply() }
+    fun getOfferRail(): String? = statusPrefs.getString(KEY_OFFER_RAIL, null)
+
     // ── OTA update state ───────────────────────────────────────────────────────────
     // A newer APK has been downloaded and verified; it is waiting either for a silent
     // install (device owner / self-installer-of-record) or for an operator to press
@@ -327,6 +332,7 @@ class DevicePrefs(private val context: Context) {
         private const val KEY_DL_CONNECT_TIMEOUT_MS  = "cfg_dl_connect_timeout_ms"
         private const val KEY_DL_READ_TIMEOUT_MS     = "cfg_dl_read_timeout_ms"
         private const val KEY_SOUND_AD_MUTED         = "cfg_sound_ad_muted"
+        private const val KEY_OFFER_RAIL         = "offer_rail_json"
 
         private const val KEY_UPDATE_READY_VC        = "update_ready_version_code"
         private const val KEY_UPDATE_READY_NAME      = "update_ready_version_name"

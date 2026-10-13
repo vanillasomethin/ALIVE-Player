@@ -231,3 +231,12 @@ Prisma migration DDL cross-checked against `prisma migrate diff`.
       Mid-test the app vanished: logcat shows two external force-stops (someone using
       the TV's selenview settings at the bench) — not a crash; relaunched, cadence
       healthy again. NOT committed — tree also holds unrelated update-gate WIP.
+
+## Offer rail (2026-10-13)
+- [x] Parse plan `offerRail` (outside planHash) → DevicePrefs, re-read every poll
+- [x] ui/OfferRail: store offers ticking on the content's right edge (portrait) / bottom (landscape); media views inset, never covered
+- [x] Shown per item: house ad / unsold content by default, sold slots only in mode "all"
+- [x] Text-to-speech: one offer at most every N min, house positions only, cut when the Sound Ad starts
+- [ ] Verify on a real panel (portrait + landscape) before raising PLAYER_LATEST_VERSION_CODE fleet-wide
+### Review
+Compiles; unit tests pass. No emulator in the build sandbox, so the rail has not been seen on a screen yet.

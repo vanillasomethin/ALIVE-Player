@@ -51,6 +51,9 @@ data class FetchPlanResult(
     // or "H264_BASELINE" mean this device has already demonstrably failed a higher tier --
     // ignore the local heuristic and use exactly that rendition. See PlanModels.resolveRendition.
     val preferredRendition: String? = null,
+    // The store's offer rail as raw JSON (studio plan `offerRail`), null = no rail. Not in
+    // planHash: read on every poll, like soundAdMuted. See ui/OfferRail.
+    val offerRailJson: String? = null,
 )
 
 data class PopEventPayload(

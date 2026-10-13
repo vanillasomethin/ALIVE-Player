@@ -79,6 +79,7 @@ class PlaybackActivity : Activity() {
     private lateinit var networkLabel: TextView
     private lateinit var offlineBadge: TextView
     private lateinit var diagOverlay: FrameLayout
+    private lateinit var offerRail: OfferRail
     private lateinit var diagDeviceId: TextView
     private lateinit var diagIp: TextView
     private lateinit var diagVersion: TextView
@@ -212,6 +213,7 @@ class PlaybackActivity : Activity() {
             engine = eng
 
             eng.onWaiting = { statusLine ->
+                offerRail.hide()
                 waitingOverlay.visibility = View.VISIBLE
                 updateStatusCard(statusLine)
             }
@@ -236,6 +238,11 @@ class PlaybackActivity : Activity() {
             waitingOverlay.visibility =
                 if (eng.isWaitingForContent) View.VISIBLE else View.GONE
 
+            // Store offers ticking beside the ad, decided per item (ui/OfferRail). Bound
+            // mid-item too, so catch up with whatever is on screen right now.
+            eng.onItemStarted = { item -> offerRail.onItem(item) }
+            if (!eng.isWaitingForContent) offerRail.onItem(eng.currentPlanItem())
+
             eng.attachViews(playerView, playerViewB, imageView, webView)
             bound = true
         }
@@ -257,6 +264,7 @@ class PlaybackActivity : Activity() {
         webView           = findViewById(R.id.web_view)
         contentRotator    = findViewById(R.id.content_rotator)
         applyContentRotation()
+        offerRail         = OfferRail(this, contentRotator, listOf(playerView, playerViewB, imageView, webView))
         waitingOverlay    = findViewById(R.id.waiting_overlay)
         waitingProgress   = findViewById(R.id.waiting_progress)
         statusIcon        = findViewById(R.id.status_icon)
@@ -678,6 +686,8 @@ class PlaybackActivity : Activity() {
         // the service-owned engine would target a destroyed activity, and during a
         // recreate the incoming instance re-registers its own.
         engine?.onGlassWedged = null
+        engine?.onItemStarted = null
+        offerRail.release()
         engine?.detachViews()
         if (bound) {
             unbindService(connection)
