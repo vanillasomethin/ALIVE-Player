@@ -34,6 +34,8 @@ class HeartbeatWorker(
             lastStallReason = stall?.first,
             lastStallMs     = stall?.second,
             incidents       = incidents,
+            remote          = runCatching { com.alive.player.remote.RemoteAccess.status(applicationContext) }.getOrNull(),
+            volumePct       = com.alive.player.remote.RemoteAccess.volumePct(applicationContext),
         )
         return try {
             try {

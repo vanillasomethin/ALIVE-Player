@@ -197,6 +197,8 @@ class DeviceApiProvider(
         lastStallReason: String? = null,
         lastStallMs: Long? = null,
         incidents: List<IncidentPayload> = emptyList(),
+        remote: com.alive.player.remote.RemoteAccess.Status? = null,
+        volumePct: Int? = null,
     ) {
         val telemetry = JSONObject()
             .put("appVersion", com.alive.player.BuildConfig.VERSION_NAME)
@@ -232,6 +234,15 @@ class DeviceApiProvider(
         if (playbackAliveMs != null && playbackAliveMs > 0) telemetry.put("playbackAliveMs", playbackAliveMs)
         if (!lastStallReason.isNullOrBlank()) telemetry.put("lastStallReason", lastStallReason)
         if (lastStallMs != null && lastStallMs > 0) telemetry.put("lastStallMs", lastStallMs)
+        // Remote access (Admin → Screens → Remote): ADB state and the Tailscale address
+        // the console turns into an `adb connect` line, plus the TV's media volume.
+        if (remote != null) {
+            telemetry.put("adbEnabled", remote.adbEnabled)
+            remote.adbPort?.let { telemetry.put("adbPort", it) }
+            remote.tailscaleIp?.let { telemetry.put("tailscaleIp", it) }
+            telemetry.put("adbCanEnable", remote.canEnableAdb)
+        }
+        if (volumePct != null) telemetry.put("volumePct", volumePct)
         val payload = JSONObject()
             .put("events", JSONArray())
             .put("telemetry", telemetry)
@@ -248,6 +259,21 @@ class DeviceApiProvider(
             payload.put("incidents", arr)
         }
         postJson("/api/device/events", payload, deviceToken)
+    }
+
+    /** One JPEG of the playback window, answering an admin `screenshot` command. */
+    fun uploadScreenshot(deviceToken: String, jpeg: ByteArray) {
+        val conn = URL("$baseUrl/api/device/screenshot").openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("Content-Type", "image/jpeg")
+        conn.setRequestProperty("Authorization", "Bearer $deviceToken")
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 30_000
+        conn.doOutput = true
+        conn.setFixedLengthStreamingMode(jpeg.size)
+        conn.outputStream.use { it.write(jpeg) }
+        val code = conn.responseCode
+        if (code !in 200..299) throw ApiHttpException(code, "POST /api/device/screenshot failed ($code)", "")
     }
 
     fun updateFcmToken(deviceToken: String, fcmToken: String) {
