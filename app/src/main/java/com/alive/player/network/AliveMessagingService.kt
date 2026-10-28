@@ -1,6 +1,8 @@
 package com.alive.player.network
 
 import com.alive.player.admin.OwnerSetup
+import com.alive.player.remote.RemoteAccess
+import com.alive.player.remote.ScreenCapture
 import com.alive.player.settings.DevicePrefs
 import com.alive.player.worker.HeartbeatScheduler
 import com.alive.player.worker.PlanFetchScheduler
@@ -69,6 +71,30 @@ class AliveMessagingService : FirebaseMessagingService() {
                 OwnerSetup.rebootDevice(applicationContext)
             }
             "decommission" -> PlanFetchScheduler.scheduleImmediate(applicationContext)
+            // Not destructive, but only ever sent to one screen, so held to the same
+            // direct-send rule as reboot: a broadcast of either is a mistake.
+            "screenshot"   -> if (isFromOwnSender(message.from, ownSenderId())) uploadScreenshot()
+            "adb_on"       -> if (isFromOwnSender(message.from, ownSenderId())) {
+                RemoteAccess.enableAdb(applicationContext)
+                HeartbeatScheduler.scheduleImmediate(applicationContext)
+            }
+            "volume"       -> if (isFromOwnSender(message.from, ownSenderId())) {
+                message.data["level"]?.toIntOrNull()?.let { level ->
+                    RemoteAccess.setVolumePct(applicationContext, level)
+                    // Report straight back, so the console shows the new level.
+                    HeartbeatScheduler.scheduleImmediate(applicationContext)
+                }
+            }
+        }
+    }
+
+    /** Captures the playback window and posts it to /api/device/screenshot. Silent on
+     *  any failure: the console simply sees no new picture and says so. */
+    private fun uploadScreenshot() {
+        val token = DevicePrefs(applicationContext).getDeviceToken() ?: return
+        CoroutineScope(Dispatchers.Main).launch {
+            val jpeg = runCatching { ScreenCapture.captureJpeg() }.getOrNull() ?: return@launch
+            launch(Dispatchers.IO) { runCatching { DeviceApiProvider().uploadScreenshot(token, jpeg) } }
         }
     }
 

@@ -372,6 +372,7 @@ class PlaybackActivity : Activity() {
     override fun onResume() {
         super.onResume()
         enterLockTaskIfOwner()
+        com.alive.player.remote.ScreenCapture.attach(this)
     }
 
     // singleTask relaunch (launcher icon, Pairing forward, OTA relaunch) lands here on
@@ -680,6 +681,7 @@ class PlaybackActivity : Activity() {
     // its IMMEDIATE flow puts a full-screen Google UI over paid ad playback.
 
     override fun onDestroy() {
+        com.alive.player.remote.ScreenCapture.detach(this)
         engine?.onWaiting = null
         engine?.onPlaying = null
         // Cleared here as well as the other callbacks: a stale recreate() lambda held by
