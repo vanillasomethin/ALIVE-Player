@@ -38,6 +38,8 @@ android {
             ?: localProps.getProperty("apiBaseUrl")
             ?: "https://wearealive.in"
         buildConfigField("String", "API_BASE_URL", "\"$apiUrl\"")
+        // See the single-APK note below buildFeatures.
+        buildConfigField("Boolean", "DOUBLE_BUFFER_VIDEO", "false")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -61,32 +63,17 @@ android {
         buildConfig = true
     }
 
-    // Per-TV-model builds. Same applicationId/signing/server across all of them (so
-    // pairing, OTA and the backend behave identically) — flavors exist only to carry
-    // device-specific tuning via BuildConfig and to emit separately-named APKs
-    // (app-<flavor>-<buildType>.apk) so each panel family gets its own artifact.
+    // ONE APK for every TV model. Per-panel product flavors (generic / kodak) were removed
+    // on 2026-10-28: they differed only in DOUBLE_BUFFER_VIDEO, which was off in both, yet
+    // OTA could only ever ship one of them, so a second flavor was a TV that silently
+    // updated onto the other. If a panel ever needs different behaviour, detect it at
+    // runtime (Build.HARDWARE / MODEL) or send it from the server per device, never as a
+    // separate APK.
     //
-    //   DEVICE_PROFILE       — read at runtime for any per-panel branch.
     //   DOUBLE_BUFFER_VIDEO  — prepare the next clip on a 2nd surface for a gapless cut.
-    //                          Needs two concurrent AVC decoders; OFF where the panel has
-    //                          one (Realtek/SPPL "Kodak"), where a 2nd decoder contends
-    //                          with the playing one and makes boundary stalls worse
-    //                          (measured on-device 2026-08-11). EXPERIMENTAL — leave off
-    //                          until validated on the specific panel.
-    flavorDimensions += "device"
-    productFlavors {
-        create("generic") {
-            dimension = "device"
-            isDefault = true
-            buildConfigField("String", "DEVICE_PROFILE", "\"generic\"")
-            buildConfigField("Boolean", "DOUBLE_BUFFER_VIDEO", "false")
-        }
-        create("kodak") {
-            dimension = "device"
-            buildConfigField("String", "DEVICE_PROFILE", "\"kodak\"")
-            buildConfigField("Boolean", "DOUBLE_BUFFER_VIDEO", "false")
-        }
-    }
+    //                          Needs two concurrent AVC decoders; it made boundary stalls
+    //                          WORSE on the single-decoder Realtek/SPPL "Kodak" panel
+    //                          (measured on-device 2026-08-11). EXPERIMENTAL, off.
 
     buildTypes {
         debug {
