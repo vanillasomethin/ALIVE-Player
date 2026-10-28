@@ -69,23 +69,20 @@ jobs:
             echo "see tools/branding/README.md."
           fi
 
-      # The fleet ships the generic flavor (isDefault; kodak exists only to flip
-      # per-panel flags like DOUBLE_BUFFER_VIDEO). Building just generic also keeps
-      # CI time flat — bare assembleRelease would build every flavor.
+      # One APK for every TV model (per-panel flavors were removed 2026-10-28).
       - name: Build release-signed APK
         env:
           SIGNING_STORE_FILE: ${{ github.workspace }}/release.jks
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-        run: ./gradlew assembleGenericRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
-      # Flavors put the output under apk/generic/release/; stage it at a neutral path
-      # so the manifest + release steps below share one location.
+      # Stage at a neutral path so the manifest + release steps below share one location.
       - name: Rename APK with version
         run: |
           mkdir -p app/build/outputs/apk/publish
-          mv app/build/outputs/apk/generic/release/app-generic-release.apk \
+          mv app/build/outputs/apk/release/app-release.apk \
              app/build/outputs/apk/publish/alive-player-$BUILD_NUMBER.apk
 
       # OTA manifest published alongside the APK, so /api/device/update-check reads the
@@ -182,13 +179,13 @@ jobs:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-        run: ./gradlew bundleGenericRelease --no-daemon
+        run: ./gradlew bundleRelease --no-daemon
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-release-aab
-          path: app/build/outputs/bundle/genericRelease/app-generic-release.aab
+          path: app/build/outputs/bundle/release/app-release.aab
           retention-days: 30
           # Run 63 "succeeded" while uploading nothing (default is warn) — fail loud.
           if-no-files-found: error
