@@ -37,7 +37,8 @@ OEM package names differ per firmware, so they are filled from a real TV, not gu
    let it run a full day (playback, OTA check, screenshot from the console).
 3. Then apply the same profile to the rest of that model, and commit the profile.
 
-The `apply` also makes the ALIVE player the TV's home screen (`cmd package set-home-activity`), so the
+The `apply` also makes the ALIVE player the TV's home screen (`cmd package set-home-activity`) and grants it
+`WRITE_SECURE_SETTINGS`, which the console's **Turn ADB on** needs, so the
 TV boots straight into ALIVE instead of the maker's launcher; `restore` sets the old one back.
 
 Re-run `apply` after a TV's firmware update: firmware updates can switch disabled apps back on.

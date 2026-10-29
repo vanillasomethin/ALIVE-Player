@@ -34,7 +34,7 @@ object RemoteAccess {
     }
 
     /** WRITE_SECURE_SETTINGS cannot be requested at runtime: it is granted once over ADB at
-     *  install (`adb shell pm grant com.alive.player android.permission.WRITE_SECURE_SETTINGS`).
+     *  install (`adb shell pm grant in.wearealive.player android.permission.WRITE_SECURE_SETTINGS`).
      *  With it the console can switch Wireless debugging back on after a reboot. */
     fun canWriteSecureSettings(context: Context): Boolean =
         context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
