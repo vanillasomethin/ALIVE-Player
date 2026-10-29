@@ -1,0 +1,2 @@
+# Any other TV model. Applied on top of common.txt. Copy this file to a new
+# <model>.txt once a model has more than one screen in the field.
