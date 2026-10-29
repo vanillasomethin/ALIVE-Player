@@ -16,6 +16,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLAYER=in.wearealive.player
+PLAYER_HOME=$PLAYER/com.alive.player.ui.PairingActivity   # the activity with the HOME filter
 SUSPECT='(^|[._])(ads?|adservice|advert|analytics|telemetry|tracking|tracker|stats|report|recommend|promo|store|market|appstore|feedback|survey|push|ota|smartcast|cloud)([._]|$)'
 
 die() { echo "error: $*" >&2; exit 1; }
@@ -61,11 +62,27 @@ backup() {
   echo "$MODEL_INFO" > "$BACKUP_DIR/tv.txt"
 }
 
+home_now() {
+  adb -s "$TV" shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME 2>/dev/null | tr -d '\r' | tail -1
+}
+
+# Make the player the TV's home screen, so it boots straight into ALIVE instead of the
+# maker's launcher (and its logo) first. The stock launcher stays installed as the
+# fallback; the previous home is kept beside the undo file so restore can put it back.
+make_player_home() {
+  local before; before=$(home_now)
+  if [[ $before == $PLAYER/* ]]; then echo "  home screen is already the ALIVE player"; return; fi
+  echo "${before:-}" > "$BACKUP_DIR/home-before.txt"
+  local out; out=$(adb -s "$TV" shell cmd package set-home-activity "$PLAYER_HOME" 2>&1 || true)
+  if [[ $(home_now) == $PLAYER/* ]]; then echo "  home screen set to the ALIVE player (was ${before:-none})"
+  else echo "  FAILED to set the home screen (${out//$'\r'/}); this firmware may not allow it without device owner"; fi
+}
+
 # The checks that matter after any change: the player is home, alive, and the services
 # its remote features and OTA ride on are still enabled.
 health() {
   local ok=1 home p disabled
-  home=$(adb -s "$TV" shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME 2>/dev/null | tr -d '\r' | tail -1)
+  home=$(home_now)
   if [[ $home == $PLAYER/* ]]; then echo "  ok   home screen is the ALIVE player"
   else echo "  WARN home screen resolves to '${home:-nothing}', not the ALIVE player"; ok=0; fi
   if adb -s "$TV" shell pidof "$PLAYER" >/dev/null 2>&1; then echo "  ok   player is running"
@@ -112,11 +129,13 @@ cmd_apply() {
     grep -qx "$pkg" <<<"$enabled" && todo+=("$pkg")
   done <<<"$profile"
 
-  if [ ${#todo[@]} -eq 0 ]; then echo "Nothing to disable: every profile package is absent or already disabled."; echo; echo "Health:"; health; return; fi
-  echo "Will disable ${#todo[@]} package(s):"; printf '  %s\n' "${todo[@]}"
+  if [ ${#todo[@]} -eq 0 ]; then echo "Nothing to disable: every profile package is absent or already disabled."
+  else echo "Will disable ${#todo[@]} package(s):"; printf '  %s\n' "${todo[@]}"; fi
+  [[ $(home_now) == $PLAYER/* ]] || echo "Will make the ALIVE player the home screen (now: $(home_now))."
   if [ "$yes" != --yes ]; then echo; echo "Dry run. Re-run with --yes to apply."; return; fi
 
   backup
+  make_player_home
   undo="$BACKUP_DIR/undo.txt"
   : > "$undo"
   for pkg in "${todo[@]}"; do
@@ -141,6 +160,10 @@ cmd_restore() {
     [ -n "$pkg" ] || continue
     adb -s "$TV" shell pm enable --user 0 "$pkg" >/dev/null 2>&1 && echo "  enabled $pkg" || echo "  FAILED  $pkg"
   done < "$undo"
+  local prev; prev=$(cat "$(dirname "$undo")/home-before.txt" 2>/dev/null || true)
+  if [[ -n $prev && $prev == */* ]]; then
+    adb -s "$TV" shell cmd package set-home-activity "$prev" >/dev/null 2>&1 && echo "  home screen set back to $prev" || echo "  FAILED to set home back to $prev"
+  fi
   echo; echo "Health:"; health
 }
 
