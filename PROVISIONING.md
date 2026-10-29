@@ -66,7 +66,7 @@ Render this JSON as a QR code (any QR generator — e.g. `qrencode -o setup.png 
 
 ```bash
 adb shell dpm list-owners
-# Expect: Device Owner: ComponentInfo{com.alive.player/com.alive.player.admin.AliveDeviceAdminReceiver}
+# Expect: Device Owner: ComponentInfo{in.wearealive.player/com.alive.player.admin.AliveDeviceAdminReceiver}
 ```
 
 In-app: Settings → Diagnostics overlay (5-tap) should show "Device Owner: yes".
