@@ -26,7 +26,7 @@ QR payload (JSON):
 ```json
 {
   "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME":
-    "com.alive.player/com.alive.player.admin.AliveDeviceAdminReceiver",
+    "in.wearealive.player/com.alive.player.admin.AliveDeviceAdminReceiver",
   "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION":
     "https://media.wearealive.in/releases/alive-player-release.apk",
   "android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM":
@@ -48,14 +48,14 @@ Render this JSON as a QR code (any QR generator — e.g. `qrencode -o setup.png 
 3. On most Android TV setup flows: tap the screen **6 times** in the same spot
    on the welcome screen to enter QR provisioning mode (same gesture as phone
    zero-touch enrollment). On Fire TV this may instead require `adb shell`
-   `dpm set-device-owner com.alive.player/.admin.AliveDeviceAdminReceiver`
+   `dpm set-device-owner in.wearealive.player/com.alive.player.admin.AliveDeviceAdminReceiver`
    with the APK pre-installed via `adb install` — Fire TV doesn't expose the
    standard QR provisioning UI.
 4. Scan the QR code (camera-based setup) or, for Fire TV / no-camera devices,
    run the ADB command directly:
    ```bash
    adb install alive-player-release.apk
-   adb shell dpm set-device-owner com.alive.player/.admin.AliveDeviceAdminReceiver
+   adb shell dpm set-device-owner in.wearealive.player/com.alive.player.admin.AliveDeviceAdminReceiver
    ```
    This only succeeds on a device with no accounts/apps configured yet
    (same factory-reset requirement).
@@ -66,7 +66,7 @@ Render this JSON as a QR code (any QR generator — e.g. `qrencode -o setup.png 
 
 ```bash
 adb shell dpm list-owners
-# Expect: Device Owner: ComponentInfo{com.alive.player/com.alive.player.admin.AliveDeviceAdminReceiver}
+# Expect: Device Owner: ComponentInfo{in.wearealive.player/com.alive.player.admin.AliveDeviceAdminReceiver}
 ```
 
 In-app: Settings → Diagnostics overlay (5-tap) should show "Device Owner: yes".
