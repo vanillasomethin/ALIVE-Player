@@ -1,0 +1,7 @@
+# Kodak / SPPL TVs (Realtek panel, e.g. SPPL_2K_RT41). Applied on top of common.txt.
+#
+# Fill this from a bench TV, not from guesses:
+#   tools/debloat/debloat.sh discover <tv-ip> kodak
+# lists every enabled package that is neither protected nor already here, and marks
+# the ones whose names look like ads, telemetry or app stores. Add a line, apply it
+# to the bench TV, run the screen for a day, then roll it out to the other Kodaks.

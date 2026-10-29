@@ -1,0 +1,55 @@
+# Packages tools/debloat/debloat.sh will NEVER disable, whatever a profile says.
+# Exact names, or a prefix ending in "." / "*". Add here, never remove casually:
+# each line is something an ALIVE screen stops working without.
+
+# The player itself, and what its remote features and updates run on
+in.wearealive.player
+com.google.android.gms            # Play services: FCM (screenshot, volume, reboot, plan_updated)
+com.google.android.gsf            # Google services framework (FCM registration)
+com.android.vending               # Play Store: updates WebView and Play services
+com.google.android.webview
+com.android.webview
+com.google.android.trichromelibrary
+com.android.packageinstaller      # OTA updates install through it
+com.google.android.packageinstaller
+com.tailscale.ipn                 # remote ADB
+com.google.android.tts            # offer-rail spoken offers (Android text-to-speech)
+com.svox.pico
+
+# Fallback home screen if the player is ever removed (a TV with no HOME boots to black)
+com.google.android.tvlauncher
+com.google.android.apps.tv.launcherx
+com.google.android.leanbacklauncher
+
+# Core Android
+android
+com.android.systemui
+com.android.settings
+com.android.tv.settings
+com.android.shell
+com.android.providers.*
+com.android.keychain
+com.android.certinstaller
+com.android.externalstorage
+com.android.networkstack*
+com.google.android.networkstack*
+com.android.wifi*
+com.google.android.wifi*
+com.android.bluetooth
+com.android.location.fused
+com.android.inputmethod*
+com.google.android.inputmethod*
+com.google.android.tv.remote.service
+com.android.tv                    # TV input framework (HDMI)
+com.android.tv.*
+
+# SoC vendor packages carry HDMI input, picture and remote-control services.
+# Never disabled by this script; OEM BRAND bloat (com.kodak.*, com.sppl.* …) is separate.
+com.realtek.*
+com.rtk.*
+com.hisilicon.*
+com.huawei.hisi*
+com.mstar.*
+com.mediatek.*
+com.droidlogic.*
+com.amlogic.*

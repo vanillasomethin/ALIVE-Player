@@ -1,0 +1,33 @@
+# Applied to EVERY TV model. Preloaded apps an in-store ad screen never uses.
+# Only packages actually present are touched; the rest are skipped silently.
+
+# Streaming and media apps (nothing plays on a signage screen but the player)
+com.google.android.youtube.tv
+com.google.android.youtube.tvmusic
+com.google.android.youtube.tvkids
+com.netflix.ninja
+com.amazon.amazonvideo.livingroom
+in.startv.hotstar
+in.startv.hotstartvonly
+com.jio.media.stb.ondemand
+com.jio.jioplay.tv
+com.graymatrix.did             # ZEE5
+com.sonyliv
+com.mxtech.videoplayer.television
+com.spotify.tv.android
+com.google.android.videos
+com.google.android.music
+com.google.android.play.games
+com.google.android.apps.mediashell   # Chromecast built-in: lets anyone in the shop cast over the ad
+
+# Google TV home content, recommendations and assistant
+com.google.android.tvrecommendations
+com.google.android.leanbacklauncher.recommendations
+com.google.android.katniss           # Google voice assistant
+com.google.android.apps.tv.dreamx    # Google TV ambient mode
+com.google.android.backdrop          # Ambient screensaver (photos over the ad)
+com.android.dreams.basic             # Screensaver
+com.android.dreams.phototable
+com.google.android.feedback
+com.google.android.marvin.talkback
+com.android.printspooler

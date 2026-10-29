@@ -1,0 +1,5 @@
+# HiSilicon TVs (Foxsky / KTC / Selenview boxes). Applied on top of common.txt.
+#
+# Fill this from a bench TV, not from guesses:
+#   tools/debloat/debloat.sh discover <tv-ip> hisilicon
+# then add a line, apply it to the bench TV, run the screen for a day, and roll out.
