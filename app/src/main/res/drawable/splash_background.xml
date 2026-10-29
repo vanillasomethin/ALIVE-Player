@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the TV paints the instant the player starts, before any layout is inflated:
+     the alive• wordmark centred on ink, so the gap after the TV maker's own boot screen
+     is ALIVE's, never a black or OEM frame. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/alive_ink" />
+    <item
+        android:width="280dp"
+        android:height="101dp"
+        android:gravity="center"
+        android:drawable="@drawable/alive_splash_logo" />
+</layer-list>

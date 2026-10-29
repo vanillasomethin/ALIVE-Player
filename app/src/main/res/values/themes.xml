@@ -12,14 +12,15 @@
 
     <!-- Pairing screen: ink black with red accents -->
     <style name="Theme.Alive.Pairing" parent="Theme.Alive">
-        <item name="android:windowBackground">@color/alive_ink</item>
+        <item name="android:windowBackground">@drawable/splash_background</item>
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowNoTitle">true</item>
     </style>
 
-    <!-- Playback screen: pure black -->
+    <!-- Playback screen: the ALIVE splash until the layout (and its own waiting
+         overlay, also the wordmark) is up; media views cover it once an ad plays. -->
     <style name="Theme.Alive.Playback" parent="android:Theme.Black.NoTitleBar.Fullscreen">
-        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowBackground">@drawable/splash_background</item>
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowNoTitle">true</item>
     </style>
