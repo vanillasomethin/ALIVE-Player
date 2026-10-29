@@ -37,8 +37,11 @@ import kotlin.math.max
  * fitCenter), so a brand's creative is smaller, never cropped or hidden.
  *
  * When it shows: mode "house" only while a house-ad position (isFiller) or unsold
- * schedule content plays; mode "all" during sold slots too. Decided per item at the item
- * boundary, where the picture changes anyway.
+ * schedule content plays; mode "all" during sold slots too; mode "slots" only at the loop
+ * positions listed in `slots`. On top of the mode, `windows` (daily India-time
+ * [{from,to}], empty = all day) limits it to times of day, judged on this TV's clock. All
+ * of it is decided per item at the item boundary, where the picture changes anyway.
+ * `layout` "side" / "bottom" pins the edge; "auto" follows the screen's orientation.
  *
  * Audio: Android text-to-speech on the TV reads ONE offer at most every audioEveryMin,
  * and only during house positions. Every non-Sound-Ad item already plays silent
@@ -51,7 +54,11 @@ class OfferRail(
     private val mediaViews: List<View>,
 ) {
     private data class Offer(val name: String, val weight: String?, val mrp: Int, val price: Int, val imageUrl: String?)
-    private data class Config(val mode: String, val audio: Boolean, val audioEveryMs: Long, val offers: List<Offer>)
+    private data class Window(val from: Int, val to: Int)   // minutes since midnight, IST
+    private data class Config(
+        val mode: String, val audio: Boolean, val audioEveryMs: Long, val offers: List<Offer>,
+        val windows: List<Window>, val slots: Set<Int>, val layout: String,
+    )
 
     private var rawJson: String? = null
     private var config: Config? = null
@@ -71,7 +78,12 @@ class OfferRail(
         refreshConfig()
         val cfg = config
         val house = item != null && (item.isFiller || item.slotPosition == null)
-        val want = item != null && cfg != null && cfg.offers.isNotEmpty() && (cfg.mode == "all" || house)
+        val modeAllows = when (cfg?.mode) {
+            "all" -> true
+            "slots" -> item?.slotPosition?.let { cfg?.slots?.contains(it) } == true
+            else -> house
+        }
+        val want = item != null && cfg != null && cfg.offers.isNotEmpty() && modeAllows && inWindow(cfg)
         if (want) show() else hide()
 
         if (item?.soundEligible == true) tts?.stop()
@@ -122,20 +134,42 @@ class OfferRail(
                 imageUrl = x.optString("imageUrl").takeIf { it.isNotBlank() && it != "null" },
             )
         }.filter { it.name.isNotBlank() }
+        val windows = o.optJSONArray("windows")?.let { w ->
+            (0 until w.length()).mapNotNull { i -> w.optJSONObject(i)?.let { x ->
+                val from = minutes(x.optString("from")); val to = minutes(x.optString("to"))
+                if (from != null && to != null && to > from) Window(from, to) else null
+            } }
+        } ?: emptyList()
+        val slots = o.optJSONArray("slots")?.let { a -> (0 until a.length()).map { a.optInt(it, -1) }.filter { it >= 0 }.toSet() } ?: emptySet()
         Config(
             mode = o.optString("mode", "house"),
             audio = o.optBoolean("audio", false),
             audioEveryMs = max(2, o.optInt("audioEveryMin", 10)) * 60_000L,
             offers = offers,
+            windows = windows, slots = slots,
+            layout = o.optString("layout", "auto"),
         )
     }.onFailure { Log.w(TAG, "offerRail JSON unreadable", it) }.getOrNull()
+
+    private fun minutes(t: String): Int? {
+        val m = Regex("^([01]\\d|2[0-3]):([0-5]\\d)$").find(t) ?: return null
+        return m.groupValues[1].toInt() * 60 + m.groupValues[2].toInt()
+    }
+
+    /** Empty = all day. The server's windows are India time whatever this TV's zone says. */
+    private fun inWindow(cfg: Config): Boolean {
+        if (cfg.windows.isEmpty()) return true
+        val now = java.time.LocalTime.now(IST)
+        val m = now.hour * 60 + now.minute
+        return cfg.windows.any { m >= it.from && m < it.to }
+    }
 
     // ── Showing / hiding ─────────────────────────────────────────────────────────────
     private fun show() {
         val w = host.width.takeIf { it > 0 } ?: host.layoutParams.width.takeIf { it > 0 } ?: context.resources.displayMetrics.widthPixels
         val h = host.height.takeIf { it > 0 } ?: host.layoutParams.height.takeIf { it > 0 } ?: context.resources.displayMetrics.heightPixels
-        val portrait = h > w
-        if (root == null || vertical != portrait) build(portrait, w, h)
+        val column = when (config?.layout) { "side" -> true; "bottom" -> false; else -> h > w }
+        if (root == null || vertical != column) build(column, w, h)
         if (shown) return
         shown = true
         root?.visibility = View.VISIBLE
@@ -337,5 +371,8 @@ class OfferRail(
         t.speak(line, TextToSpeech.QUEUE_FLUSH, null, "offer-$now")
     }
 
-    companion object { private const val TAG = "OfferRail" }
+    companion object {
+        private const val TAG = "OfferRail"
+        private val IST: java.time.ZoneId = java.time.ZoneId.of("Asia/Kolkata")
+    }
 }
