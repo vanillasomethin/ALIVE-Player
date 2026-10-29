@@ -78,6 +78,16 @@ make_player_home() {
   else echo "  FAILED to set the home screen (${out//$'\r'/}); this firmware may not allow it without device owner"; fi
 }
 
+# Lets the console's "Turn ADB on" switch Wireless debugging back on after a reboot
+# (RemoteAccess.enableAdb). Only grantable over ADB; the app can never ask for it.
+grant_adb_switch() {
+  if adb -s "$TV" shell pm grant "$PLAYER" android.permission.WRITE_SECURE_SETTINGS >/dev/null 2>&1; then
+    echo "  granted the player permission to switch ADB back on after a reboot"
+  else
+    echo "  FAILED to grant WRITE_SECURE_SETTINGS (player older than the remote-access build?)"
+  fi
+}
+
 # The checks that matter after any change: the player is home, alive, and the services
 # its remote features and OTA ride on are still enabled.
 health() {
@@ -136,6 +146,7 @@ cmd_apply() {
 
   backup
   make_player_home
+  grant_adb_switch
   undo="$BACKUP_DIR/undo.txt"
   : > "$undo"
   for pkg in "${todo[@]}"; do
