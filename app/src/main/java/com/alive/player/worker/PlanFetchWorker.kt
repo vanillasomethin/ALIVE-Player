@@ -3,7 +3,6 @@ package com.alive.player.worker
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.provider.Settings
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.alive.player.BuildConfig
@@ -21,6 +20,7 @@ import com.alive.player.settings.FetchStatus
 import com.alive.player.settings.NtpSyncManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.alive.player.network.reclaimDeviceToken
 
 class PlanFetchWorker(
     appContext: Context,
@@ -222,37 +222,20 @@ class PlanFetchWorker(
         return false
     }
 
-    /** See [PopUploadWorker.reclaimToken] — same 401/403 re-claim recovery, applied here
-     *  to plan fetches so a rotated token doesn't stall schedule updates indefinitely. */
+    /** Same 401/403 re-claim recovery as the other workers (see [reclaimDeviceToken]),
+     *  applied here so a rotated token doesn't stall schedule updates indefinitely. */
     private fun fetchPlanWithReclaim(prefs: DevicePrefs, token: String, lastPlanHash: String?): FetchPlanResult =
         try {
             DeviceApiProvider().fetchPlan(token, lastPlanHash)
         } catch (ex: ApiHttpException) {
             if (ex.code == 401 || ex.code == 403) {
-                val newToken = reclaimToken(prefs) ?: throw ex
+                val newToken = reclaimDeviceToken(applicationContext, prefs) ?: throw ex
                 DeviceApiProvider().fetchPlan(newToken, lastPlanHash)
             } else {
                 throw ex
             }
         }
 
-    private fun reclaimToken(prefs: DevicePrefs): String? {
-        val hardwareKey = Settings.Secure.getString(
-            applicationContext.contentResolver, Settings.Secure.ANDROID_ID
-        ) ?: return null
-        return try {
-            val response = DeviceApiProvider().claimDevice(hardwareKey)
-            if (response.pairingCode.isNotEmpty()) {
-                prefs.storePairingPending(response.token, response.deviceId, response.pairingCode)
-                null
-            } else {
-                prefs.storePairing(response.token, response.deviceId)
-                response.token
-            }
-        } catch (ex: Exception) {
-            null
-        }
-    }
 
     /** Mirrors PlanModels.resolveRendition() -- same three-tier logic, operating on the
      *  typed StudioPlanItem this worker gets from DeviceApiProvider instead of raw JSON. */
