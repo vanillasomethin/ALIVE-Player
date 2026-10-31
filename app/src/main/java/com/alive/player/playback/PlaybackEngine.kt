@@ -772,6 +772,18 @@ class PlaybackEngine(private val context: Context) {
 
         override fun onPlayerError(error: PlaybackException) {
             android.util.Log.e("PlaybackEngine", "Video error ${error.errorCode}: ${error.message}")
+            // Recorded like a stall, so it reaches the server with the next heartbeat. A
+            // TV that cannot decode a rendition errors here on every play: without this it
+            // showed ~2s, skipped, re-downloaded the same file and failed again, loop after
+            // loop, and the server never stepped the screen down to a simpler rendition
+            // (two distinct reports in 24h do, studio src/lib/rendition.ts).
+            // Only parsing (3xxx) and decoding (4xxx) errors: a network/IO error (2xxx) says
+            // nothing about whether this TV can decode the file, and must not step it down.
+            if (error.errorCode in 3000..4999) currentItem?.let {
+                val reason = "video error ${error.errorCode} (${error.errorCodeName}): ${it.contentVersionId}"
+                lastStallReason = reason
+                DevicePrefs(context).setLastStall(reason, System.currentTimeMillis())
+            }
             cancelFirstFrameDeadline()
             cancelStallWatchdog()
             pendingOldView = null
