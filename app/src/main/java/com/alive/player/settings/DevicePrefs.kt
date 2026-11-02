@@ -258,6 +258,29 @@ class DevicePrefs(private val context: Context) {
         return reason to statusPrefs.getLong(KEY_LAST_STALL_MS, 0L)
     }
 
+    /**
+     * A hardware decoder that failed on a video, keyed "<component>|<mime>". The SECOND
+     * failure of the same pair excludes it from then on (DecoderCapabilities), so playback
+     * falls back to this TV's next decoder, usually the software one. One failure never
+     * does: a single bad file must not cost a panel its hardware decoder. Returns true
+     * when this call is the one that excluded it.
+     */
+    fun noteDecoderFailure(decoderName: String, mimeType: String): Boolean {
+        val key = "$decoderName|$mimeType"
+        val learned = getLearnedBrokenDecoders()
+        if (key in learned) return false
+        val countKey = KEY_DECODER_FAIL_PREFIX + key
+        val n = statusPrefs.getInt(countKey, 0) + 1
+        val edit = statusPrefs.edit().putInt(countKey, n)
+        val excluded = n >= DECODER_FAILS_TO_EXCLUDE
+        if (excluded) edit.putStringSet(KEY_LEARNED_BROKEN_DECODERS, learned + key)
+        edit.apply()
+        return excluded
+    }
+
+    fun getLearnedBrokenDecoders(): Set<String> =
+        statusPrefs.getStringSet(KEY_LEARNED_BROKEN_DECODERS, null)?.toSet() ?: emptySet()
+
     /** Heartbeat written by the playback loop — proves the UI thread is still advancing. */
     fun markPlaybackAlive() {
         statusPrefs.edit().putLong(KEY_PLAYBACK_ALIVE_MS, System.currentTimeMillis()).apply()
@@ -340,6 +363,9 @@ class DevicePrefs(private val context: Context) {
         private const val KEY_UPDATE_NEEDS_USER      = "update_needs_user_action"
         private const val KEY_UPDATE_FAILED_VC       = "update_permanently_failed_vc"
         private const val KEY_UPDATE_SESSION_ID      = "update_install_session_id"
+        private const val KEY_DECODER_FAIL_PREFIX    = "diag_decoder_fail_"
+        private const val KEY_LEARNED_BROKEN_DECODERS = "diag_learned_broken_decoders"
+        private const val DECODER_FAILS_TO_EXCLUDE   = 2
         private const val KEY_LAST_STALL             = "diag_last_stall"
         private const val KEY_LAST_STALL_MS          = "diag_last_stall_ms"
         private const val KEY_PLAYBACK_ALIVE_MS      = "diag_playback_alive_ms"
