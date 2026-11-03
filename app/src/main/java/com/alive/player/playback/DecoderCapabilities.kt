@@ -33,9 +33,31 @@ object DecoderCapabilities {
         "c2.realtek.video.hevc.decoder" to setOf(MimeTypes.VIDEO_H265),
     )
 
+    // Decoders THIS TV has shown to fail (DevicePrefs.noteDecoderFailure), on top of the
+    // fleet-wide list above. Budget panels (Infinix and Coocaa, MediaTek inside) shipped
+    // decoders that reject our renditions mid-clip, and a hand-kept list only grows after a
+    // site visit. Learning it per device keeps ONE APK for every TV: the panel works out
+    // its own exclusion at runtime. Loaded at engine start and updated on each new failure.
+    @Volatile private var learned: Set<String> = emptySet()
+
+    fun loadLearned(names: Set<String>) { learned = names }
+
+    private fun isLearnedBroken(decoderName: String, mimeType: String): Boolean =
+        "$decoderName|$mimeType" in learned
+
     /** True when [decoderName] is known-broken for [mimeType] and must be excluded. */
     fun isBroken(decoderName: String, mimeType: String): Boolean =
-        BROKEN_BY_MIME[decoderName]?.contains(mimeType) == true
+        BROKEN_BY_MIME[decoderName]?.contains(mimeType) == true || isLearnedBroken(decoderName, mimeType)
+
+    /**
+     * The fleet list always applies; a learned exclusion only while another decoder for the
+     * mime is left. Excluding a panel's last decoder would turn a glitchy screen into one
+     * that plays no video at all.
+     */
+    fun usable(infos: List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo>, mimeType: String) =
+        infos.filterNot { BROKEN_BY_MIME[it.name]?.contains(mimeType) == true }.let { fleetOk ->
+            fleetOk.filterNot { isLearnedBroken(it.name, mimeType) }.ifEmpty { fleetOk }
+        }
 
     private fun hasReliableHardwareDecoder(mimeType: String): Boolean =
         MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, false, false)

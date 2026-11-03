@@ -34,6 +34,8 @@ class PlanFetchWorker(
         }
 
         val prefs = DevicePrefs(applicationContext)
+        // This TV's learned decoder exclusions decide preferHevc() for the downloads below.
+        DecoderCapabilities.loadLearned(prefs.getLearnedBrokenDecoders())
         val token = prefs.getDeviceToken() ?: return@withContext Result.failure()
         val dao = AppDatabase.get(applicationContext).planCacheDao()
         val existing = dao.get()

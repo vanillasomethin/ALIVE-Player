@@ -42,6 +42,11 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 class PlaybackEngine(private val context: Context) {
+    init {
+        // This TV's own learned decoder exclusions (DecoderCapabilities), before the first player.
+        DecoderCapabilities.loadLearned(DevicePrefs(context).getLearnedBrokenDecoders())
+    }
+
 
     private var currentItem: PlanItem? = null
     private var playStartMs: Long = 0L
@@ -153,7 +158,7 @@ class PlaybackEngine(private val context: Context) {
     // /PlanModels also consult it (via preferHevc) to pick which rendition to download.
     private val safeMediaCodecSelector = MediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
         val infos = MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, requiresSecureDecoder, requiresTunnelingDecoder)
-        infos.filterNot { DecoderCapabilities.isBroken(it.name, mimeType) }
+        DecoderCapabilities.usable(infos, mimeType)
     }
 
     fun attachViews(playerViewA: PlayerView, playerViewB: PlayerView, imageView: ImageView, webView: WebView) {
@@ -211,7 +216,15 @@ class PlaybackEngine(private val context: Context) {
     }
 
     private fun buildPlayer(): ExoPlayer =
-        ExoPlayer.Builder(context, DefaultRenderersFactory(context).setMediaCodecSelector(safeMediaCodecSelector)).build()
+        ExoPlayer.Builder(
+            context,
+            DefaultRenderersFactory(context)
+                .setMediaCodecSelector(safeMediaCodecSelector)
+                // A decoder that fails to INITIALISE is skipped for the next candidate on
+                // the spot. Mid-clip decode failures are not covered by this; those are
+                // learned in onPlayerError (DecoderCapabilities).
+                .setEnableDecoderFallback(true),
+        ).build()
 
     /** The player view that is NOT currently active — the preload/next-video target.
      *  When double-buffering is disabled (e.g. single-decoder panels), this returns the
@@ -772,6 +785,24 @@ class PlaybackEngine(private val context: Context) {
 
         override fun onPlayerError(error: PlaybackException) {
             android.util.Log.e("PlaybackEngine", "Video error ${error.errorCode}: ${error.message}")
+            // Recorded like a stall, so it reaches the server with the next heartbeat. A
+            // TV that cannot decode a rendition errors here on every play: without this it
+            // showed ~2s, skipped, re-downloaded the same file and failed again, loop after
+            // loop, and the server never stepped the screen down to a simpler rendition
+            // (two distinct reports in 24h do, studio src/lib/rendition.ts).
+            // Only parsing (3xxx) and decoding (4xxx) errors: a network/IO error (2xxx) says
+            // nothing about whether this TV can decode the file, and must not step it down.
+            if (error.errorCode in 3000..4999) currentItem?.let {
+                val prefs = DevicePrefs(context)
+                val decoder = failingDecoder(error)
+                // Second failure of the same hardware decoder: stop using it on this TV.
+                val excluded = decoder != null && prefs.noteDecoderFailure(decoder.first, decoder.second)
+                if (excluded) DecoderCapabilities.loadLearned(prefs.getLearnedBrokenDecoders())
+                val via = decoder?.let { d -> " via ${d.first}${if (excluded) " (now excluded)" else ""}" } ?: ""
+                val reason = "video error ${error.errorCode} (${error.errorCodeName})$via: ${it.contentVersionId}"
+                lastStallReason = reason
+                prefs.setLastStall(reason, System.currentTimeMillis())
+            }
             cancelFirstFrameDeadline()
             cancelStallWatchdog()
             pendingOldView = null
@@ -892,6 +923,23 @@ class PlaybackEngine(private val context: Context) {
     private fun cancelFirstFrameDeadline() {
         firstFrameDeadlineRunnable?.let { mainHandler.removeCallbacks(it) }
         firstFrameDeadlineRunnable = null
+    }
+
+    /** The decoder component and mime an error names, or null when it names none. */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun failingDecoder(error: PlaybackException): Pair<String, String>? {
+        var c: Throwable? = error.cause
+        while (c != null) {
+            val info = when (c) {
+                is androidx.media3.exoplayer.mediacodec.MediaCodecRenderer.DecoderInitializationException -> c.codecInfo
+                is androidx.media3.exoplayer.mediacodec.MediaCodecDecoderException -> c.codecInfo
+                else -> null
+            }
+            // Only HARDWARE decoders are learned: the software one is the fallback itself.
+            if (info != null) return if (info.hardwareAccelerated) info.name to info.mimeType else null
+            c = c.cause
+        }
+        return null
     }
 
     private fun evictCachedCopy(item: PlanItem) {
