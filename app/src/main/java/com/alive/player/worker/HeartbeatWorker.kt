@@ -36,6 +36,7 @@ class HeartbeatWorker(
             incidents       = incidents,
             remote          = runCatching { com.alive.player.remote.RemoteAccess.status(applicationContext) }.getOrNull(),
             volumePct       = com.alive.player.remote.RemoteAccess.volumePct(applicationContext),
+            hardware        = runCatching { com.alive.player.remote.DeviceInfo.json(applicationContext) }.getOrNull(),
         )
         return try {
             try {
