@@ -199,6 +199,7 @@ class DeviceApiProvider(
         incidents: List<IncidentPayload> = emptyList(),
         remote: com.alive.player.remote.RemoteAccess.Status? = null,
         volumePct: Int? = null,
+        hardware: JSONObject? = null,
     ) {
         val telemetry = JSONObject()
             .put("appVersion", com.alive.player.BuildConfig.VERSION_NAME)
@@ -243,6 +244,8 @@ class DeviceApiProvider(
             telemetry.put("adbCanEnable", remote.canEnableAdb)
         }
         if (volumePct != null) telemetry.put("volumePct", volumePct)
+        // What this TV is (make, model, chip, RAM, storage, decoders): Admin → Screens.
+        if (hardware != null) telemetry.put("hardware", hardware)
         val payload = JSONObject()
             .put("events", JSONArray())
             .put("telemetry", telemetry)
