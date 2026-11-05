@@ -377,6 +377,7 @@ class PlaybackActivity : Activity() {
         super.onResume()
         enterLockTaskIfOwner()
         com.alive.player.remote.ScreenCapture.attach(this)
+        com.alive.player.remote.KioskControl.attach(this)
     }
 
     // singleTask relaunch (launcher icon, Pairing forward, OTA relaunch) lands here on
@@ -686,6 +687,7 @@ class PlaybackActivity : Activity() {
 
     override fun onDestroy() {
         com.alive.player.remote.ScreenCapture.detach(this)
+        com.alive.player.remote.KioskControl.detach(this)
         engine?.onWaiting = null
         engine?.onPlaying = null
         // Cleared here as well as the other callbacks: a stale recreate() lambda held by
@@ -847,7 +849,7 @@ class PlaybackActivity : Activity() {
      * This is deliberately temporary: reopening the app from the apps menu re-runs
      * resumeKioskGuards() and a reboot re-runs BootReceiver, both of which restore kiosk.
      */
-    private fun exitKiosk() {
+    internal fun exitKiosk() {
         // 0. Unpin first: while lock-task is active the HOME launch below would be
         //    blocked and the screen would stay pinned to this task.
         runCatching { stopLockTask() }

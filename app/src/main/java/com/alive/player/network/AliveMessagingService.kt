@@ -1,6 +1,7 @@
 package com.alive.player.network
 
 import com.alive.player.admin.OwnerSetup
+import com.alive.player.remote.KioskControl
 import com.alive.player.remote.RemoteAccess
 import com.alive.player.remote.ScreenCapture
 import com.alive.player.settings.DevicePrefs
@@ -43,6 +44,9 @@ class AliveMessagingService : FirebaseMessagingService() {
      *   reboot       → restart the device now (device-owner installs only; no-ops
      *                  otherwise) — only when the message provably arrived on this
      *                  device's own token, see below
+     *   exit_kiosk   → leave the player for the TV's own launcher, back by itself after
+     *                  `minutes` (direct-send only, like reboot)
+     *   resume_kiosk → bring the player back to the front now
      *   decommission → this screen may have been deleted in the admin panel: kick an
      *                  immediate plan fetch and let the authenticated API answer. A
      *                  genuinely deleted device gets the marker-carrying 410 and
@@ -77,6 +81,18 @@ class AliveMessagingService : FirebaseMessagingService() {
             "adb_on"       -> if (isFromOwnSender(message.from, ownSenderId())) {
                 RemoteAccess.enableAdb(applicationContext)
                 HeartbeatScheduler.scheduleImmediate(applicationContext)
+            }
+            // The dashboard's stand-in for BACK x5 (exit) and for opening the app again
+            // (resume). Both take the screen on or off air, so both are direct-send only.
+            // An exit with no usable return time is ignored rather than defaulted: the
+            // server always sends one, and "stay out" must never be what a bad message means.
+            "exit_kiosk"   -> if (isFromOwnSender(message.from, ownSenderId())) {
+                KioskControl.exitMinutes(message.data["minutes"])?.let { minutes ->
+                    KioskControl.exit(applicationContext, minutes)
+                }
+            }
+            "resume_kiosk" -> if (isFromOwnSender(message.from, ownSenderId())) {
+                KioskControl.resume(applicationContext)
             }
             "volume"       -> if (isFromOwnSender(message.from, ownSenderId())) {
                 message.data["level"]?.toIntOrNull()?.let { level ->
