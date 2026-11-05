@@ -2,12 +2,15 @@ package com.alive.player.remote
 
 import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.StatFs
 import android.view.Display
 import androidx.media3.common.MimeTypes
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
+import com.alive.player.admin.OwnerSetup
 import com.alive.player.playback.DecoderCapabilities
 import com.alive.player.settings.DevicePrefs
 import org.json.JSONArray
@@ -50,6 +53,17 @@ object DeviceInfo {
         put("hevcDecoder", firstHardwareDecoder(MimeTypes.VIDEO_H265))
         if (learned.isNotEmpty()) o.put("excludedDecoders", JSONArray(learned.sorted()))
         o.put("versionCode", com.alive.player.BuildConfig.VERSION_CODE)
+        // Will this TV bring the player up by itself after a power cut? Device Owner claims HOME
+        // silently on every boot; failing that, being the TV's chosen Home app does the same. The
+        // console shows 'Starts on its own' from these two, so a TV that opens its own home screen
+        // is visible before it shows up as an offline screen.
+        o.put("deviceOwner", runCatching { OwnerSetup.isDeviceOwner(context) }.getOrDefault(false))
+        o.put("homeApp", runCatching {
+            context.packageManager.resolveActivity(
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
+                PackageManager.MATCH_DEFAULT_ONLY,
+            )?.activityInfo?.packageName == context.packageName
+        }.getOrDefault(false))
         return o
     }
 
