@@ -40,10 +40,12 @@ import com.alive.player.admin.AliveDeviceAdminReceiver
 import com.alive.player.admin.OwnerSetup
 import com.alive.player.data.AppDatabase
 import com.alive.player.service.PlaybackForegroundService
+import com.alive.player.service.UiPresence
 import com.alive.player.service.WatchdogService
 import com.alive.player.settings.DevicePrefs
 import com.alive.player.settings.FetchStatus
 import com.alive.player.settings.SettingsActivity
+import com.alive.player.worker.BootFrontCheckWorker
 import com.alive.player.worker.HeartbeatScheduler
 import com.alive.player.worker.PlanFetchScheduler
 import com.alive.player.worker.UpdateScheduler
@@ -357,6 +359,7 @@ class PlaybackActivity : Activity() {
      */
     override fun onStart() {
         super.onStart()
+        UiPresence.playbackVisible = true
         uiHandler.post(planPollRunnable)
         uiHandler.post(downloadPollRunnable)
     }
@@ -366,6 +369,7 @@ class PlaybackActivity : Activity() {
         // unrelated one-shots (banner auto-hide, retry re-enable) mid-flight.
         uiHandler.removeCallbacks(planPollRunnable)
         uiHandler.removeCallbacks(downloadPollRunnable)
+        UiPresence.playbackVisible = false
         super.onStop()
     }
 
@@ -873,6 +877,7 @@ class PlaybackActivity : Activity() {
         // 4. Cancel plan-fetch + update workers (HeartbeatScheduler stays — see kdoc).
         runCatching { PlanFetchScheduler.cancel(this) }
         runCatching { UpdateScheduler.cancel(this) }
+        runCatching { BootFrontCheckWorker.cancel(this) }
         // 5. Drop to the real Android launcher. Target it EXPLICITLY: our own manifest
         //    HOME filter still exists, so an implicit HOME intent would show the system
         //    home-picker on the signage screen (and an "Always → ALIVE" choice there is
