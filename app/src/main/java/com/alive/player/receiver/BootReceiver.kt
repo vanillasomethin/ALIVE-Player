@@ -10,6 +10,7 @@ import com.alive.player.service.PlaybackForegroundService
 import com.alive.player.service.ProcessHeartbeat
 import com.alive.player.service.WatchdogService
 import com.alive.player.ui.PairingActivity
+import com.alive.player.worker.BootFrontCheckWorker
 import com.alive.player.worker.HeartbeatScheduler
 import com.alive.player.worker.PlanFetchScheduler
 import com.alive.player.worker.UpdateScheduler
@@ -65,6 +66,13 @@ class BootReceiver : BroadcastReceiver() {
                     )
                 }
             }
+
+            // Whatever the Home resolution above says, check later that the playback screen is
+            // actually showing, and bring it up if not. Resolving as Home is not the same as
+            // being on screen: a TV that starts its own launcher at power-up (a Selenview box
+            // did) ignores the Home intent, so this app "was Home this boot" and still
+            // stayed behind a row of app tiles until someone pressed Home on the remote.
+            BootFrontCheckWorker.scheduleAfterBoot(context)
 
             // Belt-and-braces: also start the service directly, so the engine, process
             // heartbeat and watchdog run even where the activity launch was dropped.
