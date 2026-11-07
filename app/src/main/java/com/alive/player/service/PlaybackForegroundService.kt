@@ -16,6 +16,7 @@ import com.alive.player.R
 import com.alive.player.playback.PlaybackEngine
 import com.alive.player.playback.PlaybackWatchdog
 import com.alive.player.settings.DevicePrefs
+import com.alive.player.worker.HeartbeatScheduler
 import com.alive.player.worker.PlanFetchScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +35,7 @@ class PlaybackForegroundService : Service() {
     private lateinit var wakeLock: PowerManager.WakeLock
     private var heartbeatJob: Job? = null
     private var pushFallbackJob: Job? = null
+    private var reportNudgeJob: Job? = null
 
     // Proves the main thread is actually turning over — if this Looper wedges (ANR)
     // the stamp freezes and the heartbeat file the IO writer relays it into goes
@@ -93,6 +95,7 @@ class PlaybackForegroundService : Service() {
                 }
             }
             startPushFallbackPoll()
+            startReportNudge()
         }
     }
 
@@ -134,6 +137,31 @@ class PlaybackForegroundService : Service() {
         }
     }
 
+    /**
+     * Sends a heartbeat every few minutes from the service that is already running for
+     * playback, instead of leaving "this screen is alive" to the periodic WorkManager job.
+     *
+     * That job has a 15-minute floor and the console calls a screen offline after 20, which
+     * leaves five minutes of slack. WorkManager is free to run it late (battery and standby
+     * policy, a network that is not yet validated after a router blip), and a TV that is
+     * playing the whole time then reads as offline for no reason. While this service runs
+     * the screen IS playing, so it is the most honest clock there is.
+     *
+     * It reuses the one-shot heartbeat (same worker, same token reclaim, same incident
+     * batching) rather than a second code path, and the periodic job stays as the backstop
+     * for when this service is not running. Staggered so a store coming back from a power
+     * cut does not beat on the same second forever, like [startPushFallbackPoll].
+     */
+    private fun startReportNudge() {
+        reportNudgeJob = CoroutineScope(Dispatchers.IO).launch {
+            delay(Random.nextLong(REPORT_NUDGE_INTERVAL_MS))
+            while (isActive) {
+                runCatching { HeartbeatScheduler.scheduleImmediate(applicationContext) }
+                delay(REPORT_NUDGE_INTERVAL_MS)
+            }
+        }
+    }
+
     override fun onBind(intent: Intent): IBinder = binder
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -154,6 +182,7 @@ class PlaybackForegroundService : Service() {
     override fun onDestroy() {
         mainAliveHandler.removeCallbacks(mainAliveRunnable)
         pushFallbackJob?.cancel()
+        reportNudgeJob?.cancel()
         heartbeatJob?.cancel()
         watchdog.stop()
         engine.stop()
@@ -195,6 +224,9 @@ class PlaybackForegroundService : Service() {
 
         /** Push-fallback poll cadence — see [startPushFallbackPoll]. */
         private const val PUSH_FALLBACK_INTERVAL_MS = 60_000L
+
+        /** Heartbeat nudge cadence — see [startReportNudge]. Well inside the console's 20 min. */
+        private const val REPORT_NUDGE_INTERVAL_MS = 5 * 60_000L
 
         /** Stop playback without racing this service's own startup — see onStartCommand. */
         fun requestStop(context: Context) {
