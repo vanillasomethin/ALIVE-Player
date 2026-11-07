@@ -36,11 +36,28 @@ class ApiHttpException(val code: Int, message: String, val body: String? = null)
 class DeviceApiProvider(
     private val baseUrl: String = com.alive.player.BuildConfig.API_BASE_URL,
 ) {
-    /** Device self-registration. Returns JWT + 6-char pairing code to display on screen. */
-    fun claimDevice(hardwareKey: String, name: String? = null): ClaimDeviceResponse {
+    /**
+     * Device self-registration. Returns JWT + 6-char pairing code to display on screen.
+     *
+     * [currentToken] MUST be supplied whenever this device is already paired and is
+     * re-claiming after a 401/403. hardwareKey is ANDROID_ID — an identifier printed
+     * in the admin console and on the box, not a secret — so the server refuses to
+     * mint a token for a paired screen unless the caller proves it already holds one
+     * (403 `reclaim_denied`, no state change). An expired token still proves it; the
+     * server verifies the signature with ignoreExpiry.
+     *
+     * Leave it null ONLY for a genuine first-boot claim, where no token exists yet.
+     * Omitting it on a re-claim does not degrade gracefully — it fails every time,
+     * and each attempt raises an admin alert about a possible stolen hardware key.
+     */
+    fun claimDevice(
+        hardwareKey: String,
+        name: String? = null,
+        currentToken: String? = null,
+    ): ClaimDeviceResponse {
         val payload = JSONObject().put("hardwareKey", hardwareKey)
         if (name != null) payload.put("name", name)
-        val resp = postJson("/api/device/claim", payload, null)
+        val resp = postJson("/api/device/claim", payload, currentToken)
         return ClaimDeviceResponse(
             deviceId    = resp.getString("deviceId"),
             token       = resp.getString("token"),

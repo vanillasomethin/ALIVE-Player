@@ -1,7 +1,6 @@
 package com.alive.player.worker
 
 import android.content.Context
-import android.provider.Settings
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.alive.player.data.AppDatabase
@@ -13,6 +12,7 @@ import com.alive.player.settings.DevicePrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
+import com.alive.player.network.reclaimDeviceToken
 
 class PopUploadWorker(
     appContext: Context,
@@ -70,7 +70,7 @@ class PopUploadWorker(
                 // with the same hardwareKey to obtain the new token and loop back to
                 // retry this same (still-unmarked) batch immediately.
                 if (ex.code == 401 || ex.code == 403) {
-                    val newToken = reclaimToken(prefs)
+                    val newToken = reclaimDeviceToken(applicationContext, prefs)
                     if (newToken != null) {
                         token = newToken
                         return@repeat
@@ -91,32 +91,6 @@ class PopUploadWorker(
             }
         }
         Result.success()
-    }
-
-    /**
-     * Re-calls POST /api/device/claim with this device's hardwareKey to obtain a fresh
-     * token after a 401/403, per the client checklist in ALIVE_PLAYER_API.md. An empty
-     * pairingCode means the device is still admin-confirmed (just token rotation); a
-     * non-empty one means it was actually unclaimed, so there's no usable token yet —
-     * stash the pending pairing state (PairingActivity will pick it up) and let the
-     * caller retry later instead.
-     */
-    private fun reclaimToken(prefs: DevicePrefs): String? {
-        val hardwareKey = Settings.Secure.getString(
-            applicationContext.contentResolver, Settings.Secure.ANDROID_ID
-        ) ?: return null
-        return try {
-            val response = DeviceApiProvider().claimDevice(hardwareKey)
-            if (response.pairingCode.isNotEmpty()) {
-                prefs.storePairingPending(response.token, response.deviceId, response.pairingCode)
-                null
-            } else {
-                prefs.storePairing(response.token, response.deviceId)
-                response.token
-            }
-        } catch (ex: Exception) {
-            null
-        }
     }
 
     companion object {
