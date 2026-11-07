@@ -83,6 +83,8 @@ class PairingActivity : Activity() {
         // Stay panel-native and software-rotate the container to the signage
         // orientation instead, exactly like PlaybackActivity's content_rotator.
 
+        paintSplash()
+
         // Already fully paired — go straight to playback
         if (DevicePrefs(this).isPaired()) {
             startPlayback()
