@@ -3,9 +3,17 @@ package com.alive.player.ui
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.Matrix
+import android.graphics.BitmapFactory
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.LayerDrawable
 import android.util.Log
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import com.alive.player.R
 import com.alive.player.settings.DevicePrefs
 
 private const val TAG = "OrientationExt"
@@ -105,4 +113,45 @@ private fun orientationConstant(mode: String) = when (mode) {
     DevicePrefs.ORIENTATION_REVERSE_PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
     DevicePrefs.ORIENTATION_LANDSCAPE         -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     else                                     -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+}
+
+/**
+ * How far content must turn, relative to what the panel gave us, to reach the signage
+ * orientation. The same rule PlaybackActivity.applyContentRotation() and
+ * applyContentRotationTo() apply to their containers, kept here as a pure function so the
+ * boot logo below can follow it and a test can pin it.
+ */
+internal fun signageRotationFor(mode: String, isLandscapeNow: Boolean): Float = when (mode) {
+    DevicePrefs.ORIENTATION_PORTRAIT         -> if (isLandscapeNow) 90f  else 0f
+    DevicePrefs.ORIENTATION_REVERSE_PORTRAIT -> if (isLandscapeNow) 270f else 180f
+    DevicePrefs.ORIENTATION_LANDSCAPE        -> if (isLandscapeNow) 0f   else 90f
+    else                                     -> 0f
+}
+
+/**
+ * The alive wordmark on ink, turned the way the signage is mounted, painted as the window
+ * background from the first line of onCreate.
+ *
+ * It used to be the theme's windowBackground, which the system paints BEFORE any of our code
+ * runs, so it could never be turned: on a portrait screen the panel is physically landscape and
+ * our rotation only turns views inside the layout, which left the logo sideways for the moment
+ * after the TV maker's boot screen. The theme now paints plain ink for that first frame, and
+ * this puts the logo up as soon as we know how the screen is mounted. Best effort: any failure
+ * leaves the plain ink frame.
+ */
+fun Activity.paintSplash() {
+    runCatching {
+        val src = BitmapFactory.decodeResource(resources, R.drawable.alive_splash_logo) ?: return
+        val wantW = (280 * resources.displayMetrics.density).toInt()
+        val wantH = wantW * src.height / src.width
+        val scaled = Bitmap.createScaledBitmap(src, wantW, wantH, true)
+        val rotation = signageRotationFor(
+            DevicePrefs(this).getOrientationMode(),
+            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+        )
+        val turned = if (rotation == 0f) scaled
+        else Bitmap.createBitmap(scaled, 0, 0, scaled.width, scaled.height, Matrix().apply { postRotate(rotation) }, true)
+        val logo = BitmapDrawable(resources, turned).apply { gravity = Gravity.CENTER }
+        window.setBackgroundDrawable(LayerDrawable(arrayOf(ColorDrawable(getColor(R.color.alive_ink)), logo)))
+    }
 }
