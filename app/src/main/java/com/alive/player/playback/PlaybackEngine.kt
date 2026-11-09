@@ -202,6 +202,7 @@ class PlaybackEngine(private val context: Context) {
         // black screen. releasePreload() also cancels the not-yet-fired preload runnable,
         // so one can't fire later and stage a fresh preload against no views.
         releasePreload()
+        stopItemAudio()   // no sound over a screen with no picture
         // A destroyed activity's view must not be held (leak) nor consumed by the next
         // first-frame transition (it would hide the dead view and leave the real
         // previously-visible one up). The recreated activity's renderItem sets its own.
@@ -442,6 +443,46 @@ class PlaybackEngine(private val context: Context) {
      * on a stall recovery rather than re-deciding, so a mid-play stall can't
      * double-consume the hourly allowance.
      */
+    // ── Separate sound track ────────────────────────────────────────────────────
+    // A creative may carry its own audio file (studio Content.audio*). When this item may
+    // be heard (resolveVolume > 0) and the file is on disk, it plays on its own small
+    // player and the video is muted, so the attached track replaces the clip's own sound.
+    // An image with a track gets sound the same way. Stopped at every item boundary.
+    private var audioPlayer: ExoPlayer? = null
+
+    private fun stopItemAudio() {
+        val p = audioPlayer ?: return
+        audioPlayer = null
+        mainHandler.post { runCatching { p.release() } }
+    }
+
+    /** True when the item's own track started (so the video must stay muted). */
+    private fun startItemAudio(item: PlanItem, volume: Float): Boolean {
+        val sha = item.audioSha ?: return false
+        val ext = item.audioExt ?: return false
+        val file = AssetDownloader.getCachedFile(context, item.contentVersionId, "audio", sha, ext) ?: return false
+        return runCatching {
+            val p = ExoPlayer.Builder(context).build()
+            p.volume = volume
+            p.setMediaItem(MediaItem.fromUri(android.net.Uri.fromFile(file)))
+            p.prepare()
+            p.playWhenReady = true
+            audioPlayer = p
+            true
+        }.getOrElse {
+            android.util.Log.w("PlaybackEngine", "item audio failed: ${it.message}")
+            false
+        }
+    }
+
+    /** Volume for the item's VIDEO, after starting its separate track if it has one. */
+    private fun applyItemSound(item: PlanItem): Float {
+        stopItemAudio()
+        val vol = resolveVolume(item)
+        if (vol <= 0f) return 0f
+        return if (startItemAudio(item, vol)) 0f else vol
+    }
+
     private fun resolveVolume(item: PlanItem): Float {
         val prefs = DevicePrefs(context)
         if (!item.soundEligible || prefs.getSoundAdMuted()) return 0f
@@ -521,7 +562,7 @@ class PlaybackEngine(private val context: Context) {
                 pendingOldView = previouslyVisible
                 // Sound Ad: the designated slot plays with audio, everything else
                 // stays silent — set before setMediaItem so the first frame is right.
-                player.volume = resolveVolume(item)
+                player.volume = applyItemSound(item)
                 player.setMediaItem(mediaItemFor(item, resolvedUri))
                 player.prepare()
                 player.playWhenReady = true
@@ -545,6 +586,10 @@ class PlaybackEngine(private val context: Context) {
                     mainHandler.post { old.release() }
                 }
                 exoPlayer = null
+                // An image is silent unless a sound track is attached to it; only then is
+                // the hourly sound allowance asked for, so a silent image never spends it.
+                stopItemAudio()
+                if (item.audioSha != null) applyItemSound(item)
                 if (item.type == "image") {
                     showImage(iv, resolvedUri, item)
                     transitionViews(previouslyVisible, iv)
@@ -575,6 +620,7 @@ class PlaybackEngine(private val context: Context) {
         exoPlayer = player
         playerView = view
         player.addListener(videoEndListener)
+        player.volume = applyItemSound(item)
         player.playWhenReady = true   // was paused during preload; run it from frame 0
 
         cancelStallWatchdog()
@@ -1355,6 +1401,7 @@ class PlaybackEngine(private val context: Context) {
         cancelFirstFrameDeadline()
         cancelStallWatchdog()
         releasePreload()   // tear down any preloaded next-clip player + its scheduled runnable
+        stopItemAudio()
         // Capture and null-out before posting to avoid double-release if stop() is called twice
         val playerToRelease = exoPlayer
         exoPlayer = null
