@@ -148,6 +148,8 @@ class DeviceApiProvider(
                     hevcMd5 = o.optString("hevcMd5", null),
                     baselineUrl = o.optString("baselineUrl", null),
                     baselineMd5 = o.optString("baselineMd5", null),
+                    audioUrl = o.optString("audioUrl", null)?.takeIf { it.isNotBlank() },
+                    audioMd5 = o.optString("audioMd5", null)?.takeIf { it.isNotBlank() },
                 )
             }
             val items = parseItems(root.optJSONArray("items") ?: JSONArray())

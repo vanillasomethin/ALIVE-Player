@@ -129,6 +129,13 @@ class PlanFetchWorker(
                         url,
                         ext,
                     )
+                    // A separate sound track rides beside the media, cached under its own
+                    // version so the media's sibling clean-up never deletes it.
+                    val aUrl = item.audioUrl
+                    val aMd5 = item.audioMd5
+                    if (aUrl != null && aMd5 != null) {
+                        DownloadWorker.enqueue(applicationContext, item.contentId, "audio", aMd5, aUrl, extFromUrl(aUrl) ?: "m4a")
+                    }
                 }
             }
 
