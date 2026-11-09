@@ -22,6 +22,12 @@ data class PlanItem(
     // silent — see PlaybackEngine.resolveVolume(), which also enforces the once/hour
     // cadence and the store-owner mute override (Plan.soundAdMuted).
     val soundEligible: Boolean = false,
+    // A separate sound track attached to this creative in the studio (Content.audio*).
+    // Downloaded beside the media under version "audio"; played in place of the video's
+    // own sound whenever resolveVolume() lets this item be heard.
+    val audioUri: String? = null,
+    val audioSha: String? = null,
+    val audioExt: String? = null,
 )
 
 data class Plan(
@@ -120,6 +126,9 @@ fun parsePlan(json: String): Plan {
                 slotPosition = if (o.has("slotPosition")) o.getInt("slotPosition") else null,
                 isFiller = o.optBoolean("isFiller", false),
                 soundEligible = o.optBoolean("soundEligible", false),
+                audioUri = o.optString("audioUrl", null)?.takeIf { it.isNotBlank() },
+                audioSha = o.optString("audioMd5", null)?.takeIf { it.isNotBlank() },
+                audioExt = o.optString("audioUrl", null)?.takeIf { it.isNotBlank() }?.let { extFromUrl(it) ?: "m4a" },
             )
         }
 

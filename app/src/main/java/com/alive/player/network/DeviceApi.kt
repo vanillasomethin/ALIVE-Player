@@ -14,6 +14,8 @@ data class StudioPlanItem(
     val hevcMd5: String? = null,
     val baselineUrl: String? = null, // optional H.264 Baseline@3.1 rendition -- server-forced
     val baselineMd5: String? = null, // fallback once a device fails higher tiers, see preferredRendition
+    val audioUrl: String? = null, // optional separate sound track attached to the creative
+    val audioMd5: String? = null,
 )
 
 data class StudioTimelineSlot(
