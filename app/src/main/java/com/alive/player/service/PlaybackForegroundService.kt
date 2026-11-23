@@ -6,12 +6,17 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.util.Log
+import com.alive.player.admin.OwnerSetup
 import com.alive.player.R
 import com.alive.player.playback.PlaybackEngine
 import com.alive.player.playback.PlaybackWatchdog
@@ -36,6 +41,7 @@ class PlaybackForegroundService : Service() {
     private var heartbeatJob: Job? = null
     private var pushFallbackJob: Job? = null
     private var reportNudgeJob: Job? = null
+    private var networkWatchdogJob: Job? = null
 
     // Proves the main thread is actually turning over — if this Looper wedges (ANR)
     // the stamp freezes and the heartbeat file the IO writer relays it into goes
@@ -96,6 +102,7 @@ class PlaybackForegroundService : Service() {
             }
             startPushFallbackPoll()
             startReportNudge()
+            startNetworkWatchdog()
         }
     }
 
@@ -162,6 +169,67 @@ class PlaybackForegroundService : Service() {
         }
     }
 
+    /**
+     * Brings a screen back from a wedged network by itself. A TV that lost its Wi-Fi cannot
+     * receive any remote command, so the only recovery is its own. Every minute it checks for
+     * VALIDATED internet (not just a connected Wi-Fi, which stays "connected" while dead);
+     * [NetworkRecoveryPolicy] decides when to cycle Wi-Fi and when to reboot, and needs Device
+     * Owner for both. This service is stopped by Exit player and by the 5x-BACK exit, so a
+     * technician at the TV is never fought. Reboot times are kept in prefs because a reboot
+     * wipes memory, and the daily cap must survive it.
+     */
+    private fun startNetworkWatchdog() {
+        networkWatchdogJob = CoroutineScope(Dispatchers.IO).launch {
+            val prefs = applicationContext.getSharedPreferences("network_watchdog", Context.MODE_PRIVATE)
+            var state = NetworkRecoveryPolicy.State(
+                lastWifiResetMs = prefs.getLong("lastWifiResetMs", 0L),
+                rebootTimesMs = prefs.getString("reboots", "").orEmpty().split(',').mapNotNull { it.toLongOrNull() },
+            )
+            // Let the TV finish booting and joining Wi-Fi before the first judgement.
+            delay(NETWORK_WATCHDOG_INTERVAL_MS)
+            while (isActive) {
+                val now = System.currentTimeMillis()
+                val step = NetworkRecoveryPolicy.next(
+                    state, now, hasValidatedInternet(), OwnerSetup.isDeviceOwner(applicationContext),
+                )
+                state = step.state
+                when (step.action) {
+                    NetworkRecoveryPolicy.Action.NONE -> Unit
+                    NetworkRecoveryPolicy.Action.RESET_WIFI -> {
+                        prefs.edit().putLong("lastWifiResetMs", state.lastWifiResetMs).apply()
+                        Log.w(TAG, "No internet for a while: switching Wi-Fi off and on")
+                        resetWifi()
+                    }
+                    NetworkRecoveryPolicy.Action.REBOOT -> {
+                        // Written (and committed) before the reboot so the daily cap sees it.
+                        prefs.edit().putString("reboots", state.rebootTimesMs.joinToString(",")).commit()
+                        Log.w(TAG, "Still no internet: rebooting the TV")
+                        OwnerSetup.rebootDevice(applicationContext)
+                    }
+                }
+                delay(NETWORK_WATCHDOG_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun hasValidatedInternet(): Boolean {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return true // unknown is not an outage
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
+    /** Only a Device Owner may toggle Wi-Fi on Android 10+; elsewhere this is a harmless no-op. */
+    @Suppress("DEPRECATION")
+    private suspend fun resetWifi() {
+        val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager ?: return
+        if (runCatching { wifi.setWifiEnabled(false) }.getOrDefault(false)) {
+            delay(5_000)
+            runCatching { wifi.setWifiEnabled(true) }
+        } else {
+            Log.w(TAG, "This TV would not let the player switch Wi-Fi off; the reboot step is the fallback")
+        }
+    }
+
     override fun onBind(intent: Intent): IBinder = binder
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -183,6 +251,7 @@ class PlaybackForegroundService : Service() {
         mainAliveHandler.removeCallbacks(mainAliveRunnable)
         pushFallbackJob?.cancel()
         reportNudgeJob?.cancel()
+        networkWatchdogJob?.cancel()
         heartbeatJob?.cancel()
         watchdog.stop()
         engine.stop()
@@ -217,6 +286,7 @@ class PlaybackForegroundService : Service() {
     }
 
     companion object {
+        private const val TAG = "NetworkWatchdog"
         private const val CHANNEL_ID = "alive_playback"
         private const val ACTION_STOP = "com.alive.player.action.PLAYBACK_STOP"
         private const val HEARTBEAT_PERIOD_MS = 10_000L
@@ -227,6 +297,9 @@ class PlaybackForegroundService : Service() {
 
         /** Heartbeat nudge cadence — see [startReportNudge]. Well inside the console's 20 min. */
         private const val REPORT_NUDGE_INTERVAL_MS = 5 * 60_000L
+
+        /** How often the network watchdog looks for validated internet. */
+        private const val NETWORK_WATCHDOG_INTERVAL_MS = 60_000L
 
         /** Stop playback without racing this service's own startup — see onStartCommand. */
         fun requestStop(context: Context) {
