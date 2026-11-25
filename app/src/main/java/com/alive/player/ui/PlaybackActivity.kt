@@ -893,16 +893,35 @@ class PlaybackActivity : Activity() {
             // silently drops them — leaving only our own PairingActivity, which sends the
             // fallback implicit intent straight into the "Select Home app" picker on the
             // signage screen (observed on HiSilicon/selenview boxes). Verified on-device.
+            // A placeholder HOME (FallbackHome) is not a launcher: it hands straight back to
+            // the best HOME app, which on a TV with no launcher is us, so the exit would undo
+            // itself within a second (KioskControl.isPlaceholderHome).
             val launcher = packageManager
                 .queryIntentActivities(homeIntent, 0)
-                .firstOrNull { it.activityInfo?.packageName != packageName }
-                ?.activityInfo
-            startActivity(
-                Intent(homeIntent).apply {
-                    if (launcher != null) setClassName(launcher.packageName, launcher.name)
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                .mapNotNull { it.activityInfo }
+                .firstOrNull {
+                    it.packageName != packageName &&
+                        !com.alive.player.remote.KioskControl.isPlaceholderHome(it.name)
                 }
-            )
+            if (launcher != null) {
+                startActivity(
+                    Intent(homeIntent).apply {
+                        setClassName(launcher.packageName, launcher.name)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                )
+            } else {
+                // No real launcher on this TV: land on Android Settings, which stays in
+                // front. Playback comes back on Resume, the return timer, the apps menu or
+                // a reboot, exactly as it does after an exit onto a launcher.
+                val settings = Intent(android.provider.Settings.ACTION_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (settings.resolveActivity(packageManager) != null) {
+                    startActivity(settings)
+                } else {
+                    startActivity(Intent(homeIntent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+            }
         }
         finishAffinity()
     }

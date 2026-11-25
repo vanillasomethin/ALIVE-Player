@@ -1,7 +1,9 @@
 package com.alive.player.remote
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** The return time on a remote exit: in range or nothing happens, never a default. */
@@ -16,4 +18,11 @@ class KioskControlTest {
     @Test fun `a missing time is ignored, not defaulted`() = assertNull(KioskControl.exitMinutes(null))
     @Test fun `text is ignored`() = assertNull(KioskControl.exitMinutes("soon"))
     @Test fun `a fraction is ignored`() = assertNull(KioskControl.exitMinutes("30.5"))
+
+    // The exit must not "land" on Android's placeholder home, which just relaunches us.
+    @Test fun `the placeholder home is recognised`() =
+        assertTrue(KioskControl.isPlaceholderHome("com.android.tv.settings.system.FallbackHome"))
+    @Test fun `a real launcher is not the placeholder`() =
+        assertFalse(KioskControl.isPlaceholderHome("com.google.android.apps.tv.launcherx.home.HomeActivity"))
+    @Test fun `a missing class name is not the placeholder`() = assertFalse(KioskControl.isPlaceholderHome(null))
 }
