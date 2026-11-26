@@ -34,6 +34,16 @@ object KioskControl {
     fun exitMinutes(raw: String?): Int? =
         raw?.toIntOrNull()?.takeIf { it in EXIT_MINUTES_MIN..EXIT_MINUTES_MAX }
 
+    /**
+     * True for Android's placeholder HOME (`com.android.tv.settings.system.FallbackHome`),
+     * which is a HOME activity but not a launcher: it only waits for a "real" home and, the
+     * moment it finds one, starts it. On a TV with no launcher of its own that real home is
+     * THIS app (our manifest still declares HOME), so exiting into it relaunches playback
+     * within a second. Seen on a Skyworth/Coocaa SWTV-22AE-FHD, 2026-11-25.
+     */
+    fun isPlaceholderHome(className: String?): Boolean =
+        className?.endsWith(".FallbackHome") == true
+
     /** PlaybackActivity registers itself while it is the screen's window. */
     fun attach(activity: PlaybackActivity) { current = WeakReference(activity) }
     fun detach(activity: PlaybackActivity) { if (current?.get() === activity) current = null }
